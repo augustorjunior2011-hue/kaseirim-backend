@@ -8,6 +8,8 @@ from flask_cors import CORS
 from src.models.user import db
 from src.routes.user import user_bp
 from src.routes.loyalty import loyalty_bp
+from src.routes.denuncia import denuncia_bp
+from src.routes.emprego import emprego_bp
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
@@ -18,9 +20,16 @@ CORS(app, origins=["*"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], al
 # Registra os blueprints das APIs
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(loyalty_bp, url_prefix='/api')
+app.register_blueprint(denuncia_bp, url_prefix='/api')
+app.register_blueprint(emprego_bp, url_prefix='/api')
+
+# Limite de upload (fotos das denúncias)
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
 
 # Configuração do banco de dados
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.dirname(__file__), 'database', 'app.db')}"
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL', f"sqlite:///{os.path.join(os.path.dirname(__file__), 'database', 'app.db')}"
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 with app.app_context():
