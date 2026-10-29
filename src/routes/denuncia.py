@@ -4,7 +4,7 @@ import secrets
 
 from flask import Blueprint, request, jsonify, send_file, abort
 
-from src.models.user import db
+from src.models.db import db
 from src.models.denuncia import (
     Denuncia, FotoDenuncia, MensagemDenuncia,
     CATEGORIAS, FACCIONADO, STATUS, METODOS_RESGATE,
