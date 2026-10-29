@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from src.models.user import db
+from src.models.db import db
 
 TIPOS = ('oferta', 'procura')
 DIAS_VALIDADE = 30

@@ -1,5 +1,5 @@
 from datetime import datetime
-from src.models.user import db
+from src.models.db import db
 
 # Crimes graves: apenas estes podem gerar recompensa
 CATEGORIAS = {

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, request, jsonify
 
-from src.models.user import db
+from src.models.db import db
 from src.models.emprego import Vaga, TIPOS
 from src.utils.anonimato import gerar_codigo, hash_chave, conferir_chave, exige_analista
 

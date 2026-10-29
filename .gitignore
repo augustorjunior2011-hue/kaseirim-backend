@@ -1,3 +1,4 @@
 src/database/uploads/
 __pycache__/
 *.pyc
+src/database/*.db
