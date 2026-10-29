@@ -7,9 +7,11 @@ _tmp = tempfile.mkdtemp()
 os.environ['DATABASE_URL'] = f"sqlite:///{os.path.join(_tmp, 'test.db')}"
 os.environ['UPLOAD_DIR'] = os.path.join(_tmp, 'uploads')
 os.environ['ANALISTA_TOKEN'] = 'token-teste'
+os.environ['DESATIVAR_LIMITES'] = '1'
 
 from PIL import Image  # noqa: E402
 from src.main import app  # noqa: E402
+from src.utils.limite import zerar_limites  # noqa: E402
 
 ANALISTA = {'Authorization': 'Bearer token-teste'}
 
@@ -179,6 +181,31 @@ class EmpregoTest(unittest.TestCase):
 
         self.assertEqual(self.client.delete(f'/api/empregos/{vid}', json={'codigo_gestao': codigo}).status_code, 204)
         self.assertNotIn(vid, self.ids_no_ar())
+
+
+class LimiteTest(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
+        os.environ.pop('DESATIVAR_LIMITES')
+        zerar_limites()
+
+    def tearDown(self):
+        os.environ['DESATIVAR_LIMITES'] = '1'
+        zerar_limites()
+
+    def test_acompanhar_bloqueia_forca_bruta(self):
+        cred = {'protocolo': 'DN-XXXX-XXXX-XXXX', 'chave': 'CH-errada'}
+        codigos = [self.client.post('/api/denuncias/acompanhar', json=cred).status_code for _ in range(31)]
+        self.assertEqual(codigos[:30], [404] * 30)
+        self.assertEqual(codigos[30], 429)
+
+    def test_token_da_equipe_errado_bloqueia(self):
+        errado = {'Authorization': 'Bearer chute'}
+        codigos = [self.client.get('/api/analise/empregos', headers=errado).status_code for _ in range(11)]
+        self.assertEqual(codigos[:10], [401] * 10)
+        self.assertEqual(codigos[10], 429)
+        # depois do bloqueio, nem o token certo passa até a janela acabar
+        self.assertEqual(self.client.get('/api/analise/empregos', headers=ANALISTA).status_code, 429)
 
 
 class MapaTest(unittest.TestCase):

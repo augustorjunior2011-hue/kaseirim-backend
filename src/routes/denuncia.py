@@ -12,6 +12,7 @@ from src.utils.anonimato import (
     gerar_codigo, gerar_chave_secreta, hash_chave, conferir_chave,
     normalizar, limpar_imagem, exige_analista,
 )
+from src.utils.limite import limitar
 
 denuncia_bp = Blueprint('denuncia', __name__)
 
@@ -63,6 +64,7 @@ def listar_categorias():
 
 
 @denuncia_bp.route('/denuncias', methods=['POST'])
+@limitar('denuncia_criar', 10, 3600)
 def criar_denuncia():
     dados = _dados()
 
@@ -139,6 +141,7 @@ def criar_denuncia():
 
 
 @denuncia_bp.route('/denuncias/acompanhar', methods=['POST'])
+@limitar('denuncia_acesso', 30, 600)
 def acompanhar_denuncia():
     denuncia = _autenticar(request.get_json(silent=True) or {})
     if not denuncia:
@@ -147,6 +150,7 @@ def acompanhar_denuncia():
 
 
 @denuncia_bp.route('/denuncias/mensagens', methods=['POST'])
+@limitar('denuncia_acesso', 30, 600)
 def enviar_mensagem_cidadao():
     dados = request.get_json(silent=True) or {}
     denuncia = _autenticar(dados)

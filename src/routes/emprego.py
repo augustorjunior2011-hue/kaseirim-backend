@@ -9,6 +9,7 @@ from src.models.emprego import (
     normalizar_cidade, palavras_suspeitas,
 )
 from src.utils.anonimato import gerar_codigo, hash_chave, conferir_chave, exige_analista
+from src.utils.limite import limitar
 
 emprego_bp = Blueprint('emprego', __name__)
 
@@ -105,6 +106,7 @@ def detalhe_vaga(vaga_id):
 
 
 @emprego_bp.route('/empregos', methods=['POST'])
+@limitar('vaga_criar', 10, 3600)
 def criar_vaga():
     dados = request.get_json(silent=True) or {}
     erros = _validar(dados)
@@ -150,6 +152,7 @@ def criar_vaga():
 
 
 @emprego_bp.route('/empregos/<int:vaga_id>', methods=['PUT'])
+@limitar('vaga_gestao', 30, 600)
 def editar_vaga(vaga_id):
     dados = request.get_json(silent=True) or {}
     vaga = _vaga_autorizada(vaga_id, dados)
@@ -179,6 +182,7 @@ def editar_vaga(vaga_id):
 
 
 @emprego_bp.route('/empregos/<int:vaga_id>', methods=['DELETE'])
+@limitar('vaga_gestao', 30, 600)
 def remover_vaga(vaga_id):
     vaga = _vaga_autorizada(vaga_id, request.get_json(silent=True) or {})
     if not vaga:
@@ -189,6 +193,7 @@ def remover_vaga(vaga_id):
 
 
 @emprego_bp.route('/empregos/<int:vaga_id>/denunciar', methods=['POST'])
+@limitar('vaga_denunciar', 20, 3600)
 def denunciar_vaga(vaga_id):
     """Qualquer pessoa marca um anúncio como golpe/abusivo. Muitas denúncias tiram o anúncio do ar."""
     vaga = _visiveis().filter_by(id=vaga_id).first_or_404()
