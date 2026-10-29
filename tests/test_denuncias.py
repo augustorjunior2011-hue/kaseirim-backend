@@ -1,7 +1,10 @@
 import io
+import itertools
 import os
 import tempfile
+from datetime import datetime
 import unittest
+from unittest import mock
 
 _tmp = tempfile.mkdtemp()
 os.environ['DATABASE_URL'] = f"sqlite:///{os.path.join(_tmp, 'test.db')}"
@@ -181,6 +184,89 @@ class EmpregoTest(unittest.TestCase):
 
         self.assertEqual(self.client.delete(f'/api/empregos/{vid}', json={'codigo_gestao': codigo}).status_code, 204)
         self.assertNotIn(vid, self.ids_no_ar())
+
+
+class DestaquePixTest(unittest.TestCase):
+    """Mercado Pago simulado: nenhum teste fala com a API de verdade."""
+    ids_mp = itertools.count(1000)
+
+    def setUp(self):
+        self.client = app.test_client()
+        self.mp = {}  # mp_id -> pagamento simulado
+        patches = [
+            mock.patch('src.utils.mercadopago.configurado', return_value=True),
+            mock.patch('src.utils.mercadopago.criar_pix', side_effect=self._criar),
+            mock.patch('src.utils.mercadopago.consultar', side_effect=lambda mp_id: self.mp[mp_id]),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _criar(self, valor, descricao, referencia, expira_em, notification_url=None):
+        mp_id = str(next(DestaquePixTest.ids_mp))
+        self.mp[mp_id] = {'id': mp_id, 'status': 'pending', 'external_reference': referencia,
+                          'transaction_amount': float(valor),
+                          'point_of_interaction': {'transaction_data': {'qr_code': '000201PIX', 'qr_code_base64': 'aGk='}}}
+        return self.mp[mp_id]
+
+    def anuncio_no_ar(self, telefone):
+        r = self.client.post('/api/empregos', json={
+            'tipo': 'procura', 'titulo': 'Procuro vaga de garçom', 'descricao': 'Experiência em eventos',
+            'cidade': 'Niterói', 'uf': 'RJ', 'telefone_contato': telefone,
+        }).get_json()
+        return r['vaga']['id'], r['codigo_gestao']
+
+    def test_pix_pago_ativa_destaque_uma_vez(self):
+        vid, codigo = self.anuncio_no_ar('21911110001')
+        planos = self.client.get('/api/empregos/destaque/planos').get_json()
+        self.assertTrue(planos['disponivel'])
+
+        self.assertEqual(self.client.post(f'/api/empregos/{vid}/destaque',
+                                          json={'codigo_gestao': 'errado', 'dias': 7}).status_code, 403)
+        self.assertEqual(self.client.post(f'/api/empregos/{vid}/destaque',
+                                          json={'codigo_gestao': codigo, 'dias': 3}).status_code, 400)
+        r = self.client.post(f'/api/empregos/{vid}/destaque', json={'codigo_gestao': codigo, 'dias': 7})
+        self.assertEqual(r.status_code, 201)
+        pix = r.get_json()
+        self.assertEqual(pix['qr_code'], '000201PIX')
+        self.assertEqual(pix['valor'], 9.9)
+
+        status = self.client.post(f"/api/empregos/destaque/{pix['id']}/status", json={'codigo_gestao': codigo})
+        self.assertEqual(status.get_json()['status'], 'pendente')
+
+        mp_id = next(iter(self.mp))
+        self.mp[mp_id]['status'] = 'approved'
+        # aviso do Mercado Pago e consulta do site: o destaque só pode ser somado uma vez
+        self.assertEqual(self.client.post('/api/pagamentos/mercadopago',
+                                          json={'type': 'payment', 'data': {'id': mp_id}}).status_code, 200)
+        status = self.client.post(f"/api/empregos/destaque/{pix['id']}/status", json={'codigo_gestao': codigo}).get_json()
+        self.assertEqual(status['status'], 'aprovado')
+
+        vaga = self.client.post(f'/api/empregos/{vid}/gestao', json={'codigo_gestao': codigo}).get_json()
+        self.assertTrue(vaga['destaque'])
+        dias = (datetime.fromisoformat(vaga['destaque_ate']) - datetime.utcnow()).days
+        self.assertIn(dias, (6, 7))
+
+    def test_valor_ou_referencia_errados_nao_ativam(self):
+        vid, codigo = self.anuncio_no_ar('21911110002')
+        pix = self.client.post(f'/api/empregos/{vid}/destaque', json={'codigo_gestao': codigo, 'dias': 30}).get_json()
+        mp_id = next(iter(self.mp))
+        self.mp[mp_id].update(status='approved', transaction_amount=0.01)
+        status = self.client.post(f"/api/empregos/destaque/{pix['id']}/status", json={'codigo_gestao': codigo}).get_json()
+        self.assertEqual(status['status'], 'pendente')
+
+    def test_anuncio_em_aprovacao_nao_pode_ser_destacado(self):
+        r = self.client.post('/api/empregos', json={
+            'tipo': 'oferta', 'titulo': 'Garçom', 'descricao': 'Restaurante', 'cidade': 'Niterói',
+            'uf': 'RJ', 'telefone_contato': '21911110003',
+        }).get_json()
+        resp = self.client.post(f"/api/empregos/{r['vaga']['id']}/destaque",
+                                json={'codigo_gestao': r['codigo_gestao'], 'dias': 7})
+        self.assertEqual(resp.status_code, 400)
+        gestao = self.client.post(f"/api/empregos/{r['vaga']['id']}/gestao",
+                                  json={'codigo_gestao': r['codigo_gestao']}).get_json()
+        self.assertEqual(gestao['status'], 'pendente')
+        self.assertFalse(gestao['no_ar'])
 
 
 class LimiteTest(unittest.TestCase):

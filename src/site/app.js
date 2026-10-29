@@ -284,7 +284,8 @@ function telaPublicar() {
           <p style="margin-top:12px">Para remover o anúncio depois, você vai precisar destes dados. Anote:</p>
           <div class="credenciais">Nº ${r.vaga.id}<br>${esc(r.codigo_gestao)}
             <small>Número do anúncio e código de gestão</small></div>
-          <p class="suave" style="margin-top:12px">O anúncio fica no ar por 30 dias${noAr ? '' : ' a partir da aprovação'}.</p>
+          <p class="suave" style="margin-top:12px">O anúncio fica no ar por 30 dias${noAr ? '' : ' a partir da aprovação'}.
+            Com esses dados você também pode <strong>destacar o anúncio</strong> em "Gerenciar meu anúncio".</p>
           <a class="botao" href="#/">Ver anúncios</a>`;
       } catch (err) {
         mostrarErro(form, err.message);
@@ -293,13 +294,28 @@ function telaPublicar() {
   });
 }
 
+const STATUS_ANUNCIO = {
+  pendente: 'Aguardando aprovação da equipe',
+  aprovada: 'No ar',
+  rejeitada: 'Não aprovado',
+};
+
+function dataBR(iso) {
+  return iso ? new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).toLocaleDateString('pt-BR') : '';
+}
+
+function reais(valor) {
+  return 'R$ ' + Number(valor).toFixed(2).replace('.', ',');
+}
+
 function telaGerenciar() {
   tela.innerHTML = `
-    <h1>Remover meu anúncio</h1>
+    <h1>Gerenciar meu anúncio</h1>
     <form id="form-gerenciar">
       <label>Número do anúncio <input name="id" required inputmode="numeric"></label>
-      <label>Código de gestão <input name="codigo_gestao" required autocapitalize="characters" placeholder="VG-XXXX-XXXX-XXXX"></label>
-      <button type="submit">Remover anúncio</button>
+      <label>Código de gestão <input name="codigo_gestao" required autocapitalize="characters" autocomplete="off"
+        placeholder="VG-XXXX-XXXX-XXXX"></label>
+      <button type="submit">Entrar</button>
     </form>`;
 
   const form = document.getElementById('form-gerenciar');
@@ -308,13 +324,126 @@ function telaGerenciar() {
     const { id, codigo_gestao } = formDados(form);
     enviando(form.querySelector('button'), async () => {
       try {
-        await api(`/empregos/${encodeURIComponent(id)}`, { method: 'DELETE', json: { codigo_gestao } });
-        tela.innerHTML = '<h1>Anúncio removido</h1><a class="botao" href="#/">Voltar</a>';
+        const vaga = await api(`/empregos/${encodeURIComponent(id)}/gestao`, { method: 'POST', json: { codigo_gestao } });
+        meuAnuncio(vaga, codigo_gestao.trim());
       } catch (err) {
         mostrarErro(form, err.message);
       }
     });
   });
+}
+
+async function meuAnuncio(vaga, codigo) {
+  tela.innerHTML = `
+    <h1>Meu anúncio</h1>
+    <div class="cartao ${vaga.destaque ? 'destaque' : ''}">
+      <span class="etiqueta">Nº ${vaga.id}</span>
+      <span class="etiqueta">${esc(STATUS_ANUNCIO[vaga.status] || vaga.status)}</span>
+      ${vaga.destaque ? '<span class="etiqueta">Destaque</span>' : ''}
+      <h3>${esc(vaga.titulo)}</h3>
+      <p class="suave">${esc([vaga.empresa, `${vaga.cidade}/${vaga.uf}`, vaga.salario].filter(Boolean).join(' · '))}</p>
+      ${vaga.no_ar ? `<p class="suave">No ar até ${dataBR(vaga.expira_em)}</p>` : ''}
+      ${vaga.destaque ? `<p class="suave">Em destaque até ${dataBR(vaga.destaque_ate)}</p>` : ''}
+      ${vaga.motivo_rejeicao ? `<p class="erro">Motivo: ${esc(vaga.motivo_rejeicao)}</p>` : ''}
+    </div>
+    <div id="area-destaque"></div>
+    <button type="button" class="secundario" id="remover">Remover anúncio</button>`;
+
+  document.getElementById('remover').addEventListener('click', async e => {
+    if (!confirm('Remover este anúncio?')) return;
+    await enviando(e.target, async () => {
+      try {
+        await api(`/empregos/${vaga.id}`, { method: 'DELETE', json: { codigo_gestao: codigo } });
+        tela.innerHTML = '<h1>Anúncio removido</h1><a class="botao" href="#/">Voltar</a>';
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  if (!vaga.no_ar) return;
+  let planos;
+  try {
+    planos = await api('/empregos/destaque/planos');
+  } catch {
+    return;
+  }
+  if (!planos.disponivel) return;
+
+  const area = document.getElementById('area-destaque');
+  area.innerHTML = `
+    <div class="cartao">
+      <h3>${vaga.destaque ? 'Aumentar o destaque' : 'Destacar anúncio'}</h3>
+      <p class="suave">Anúncios em destaque aparecem no topo da lista, em amarelo.</p>
+      <form id="form-destaque">
+        <div class="opcoes">
+          ${planos.planos.map((p, i) => `<label><input type="radio" name="dias" value="${p.dias}" ${i ? '' : 'checked'}>
+            ${p.dias} dias<br><strong>${reais(p.valor)}</strong></label>`).join('')}
+        </div>
+        <button type="submit">Pagar com PIX</button>
+      </form>
+    </div>`;
+
+  const formDestaque = document.getElementById('form-destaque');
+  formDestaque.addEventListener('submit', e => {
+    e.preventDefault();
+    enviando(formDestaque.querySelector('button'), async () => {
+      try {
+        const pix = await api(`/empregos/${vaga.id}/destaque`, {
+          method: 'POST', json: { codigo_gestao: codigo, dias: Number(formDestaque.dias.value) },
+        });
+        telaPix(pix, vaga, codigo);
+      } catch (err) {
+        mostrarErro(formDestaque, err.message);
+      }
+    });
+  });
+}
+
+function telaPix(pix, vaga, codigo) {
+  tela.innerHTML = `
+    <h1>Pague com PIX</h1>
+    <p>Destaque de <strong>${pix.dias} dias</strong> para o anúncio Nº ${vaga.id}: <strong>${reais(pix.valor)}</strong></p>
+    ${pix.qr_code_base64 ? `<img class="qr-pix" src="data:image/png;base64,${esc(pix.qr_code_base64)}" alt="QR code do PIX">` : ''}
+    <label>PIX copia e cola <textarea id="pix-copia" readonly>${esc(pix.qr_code || '')}</textarea></label>
+    <button type="button" id="copiar">Copiar código PIX</button>
+    <p id="status-pix" class="aviso" style="margin-top:16px">Aguardando pagamento... Esta tela atualiza sozinha.</p>
+    <p class="suave">O código vale por 30 minutos.</p>`;
+
+  document.getElementById('copiar').addEventListener('click', async e => {
+    const campo = document.getElementById('pix-copia');
+    try {
+      await navigator.clipboard.writeText(campo.value);
+    } catch {
+      campo.select();
+      document.execCommand('copy');
+    }
+    e.target.textContent = 'Copiado!';
+  });
+
+  const fim = new Date(pix.expira_em + 'Z').getTime();
+  const rotaAtual = location.hash;
+  const verificar = async () => {
+    if (location.hash !== rotaAtual || !document.getElementById('status-pix')) return;  // saiu da tela
+    try {
+      const st = await api(`/empregos/destaque/${pix.id}/status`, { method: 'POST', json: { codigo_gestao: codigo } });
+      const aviso = document.getElementById('status-pix');
+      if (st.status === 'aprovado') {
+        aviso.innerHTML = `<strong>Pagamento confirmado!</strong> Seu anúncio está em destaque até ${dataBR(st.destaque_ate)}.`;
+        aviso.classList.add('sucesso');
+        return;
+      }
+      if (st.status === 'cancelado') {
+        aviso.textContent = 'O pagamento não foi concluído. Volte e gere um novo PIX.';
+        return;
+      }
+    } catch {
+      // tenta de novo no próximo ciclo
+    }
+    if (Date.now() < fim) setTimeout(verificar, 5000);
+    else document.getElementById('status-pix').textContent = 'O código PIX expirou. Volte e gere um novo.';
+  };
+  setTimeout(verificar, 5000);
 }
 
 // ---------------------------------------------------------------------------

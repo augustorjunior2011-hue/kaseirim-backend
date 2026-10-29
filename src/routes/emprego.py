@@ -1,13 +1,16 @@
 import re
+import os
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from flask import Blueprint, request, jsonify
 
 from src.models.db import db
 from src.models.emprego import (
-    Vaga, DenunciaVaga, TIPOS, STATUS, DENUNCIAS_PARA_OCULTAR,
+    Vaga, DenunciaVaga, PagamentoDestaque, TIPOS, STATUS, DENUNCIAS_PARA_OCULTAR,
     normalizar_cidade, palavras_suspeitas,
 )
+from src.utils import mercadopago
 from src.utils.anonimato import gerar_codigo, hash_chave, conferir_chave, exige_analista
 from src.utils.limite import limitar
 
@@ -16,6 +19,13 @@ emprego_bp = Blueprint('emprego', __name__)
 CAMPOS_EDITAVEIS = ('titulo', 'descricao', 'empresa', 'cidade', 'uf', 'salario', 'telefone_contato')
 MAX_ANUNCIOS_POR_TELEFONE = 3
 MOTIVOS_DENUNCIA = ('golpe', 'cobra_taxa', 'conteudo_ofensivo', 'vaga_inexistente', 'outro')
+
+# Planos de destaque (dias -> preço). Preços configuráveis por variável de ambiente.
+PLANOS_DESTAQUE = {
+    7: Decimal(os.environ.get('PRECO_DESTAQUE_7_DIAS', '9.90')),
+    30: Decimal(os.environ.get('PRECO_DESTAQUE_30_DIAS', '29.90')),
+}
+MINUTOS_PARA_PAGAR = 30
 
 
 def _validar(dados, parcial=False):
@@ -212,6 +222,135 @@ def denunciar_vaga(vaga_id):
     return jsonify({'message': 'Obrigado. Nossa equipe vai verificar este anúncio.'}), 201
 
 
+@emprego_bp.route('/empregos/<int:vaga_id>/gestao', methods=['POST'])
+@limitar('vaga_gestao', 30, 600)
+def ver_meu_anuncio(vaga_id):
+    """Quem tem o código de gestão vê o próprio anúncio, inclusive se ainda está em aprovação."""
+    vaga = _vaga_autorizada(vaga_id, request.get_json(silent=True) or {})
+    if not vaga or not vaga.ativa:
+        return jsonify({'error': 'Número ou código de gestão inválido'}), 403
+    no_ar = vaga.status == 'aprovada' and vaga.expira_em > datetime.utcnow()
+    return jsonify({
+        **vaga.to_dict(),
+        'status': vaga.status,
+        'no_ar': no_ar,
+        'motivo_rejeicao': vaga.motivo_moderacao if vaga.status == 'rejeitada' else None,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Destaque pago por PIX (Mercado Pago)
+# ---------------------------------------------------------------------------
+
+@emprego_bp.route('/empregos/destaque/planos', methods=['GET'])
+def planos_destaque():
+    return jsonify({
+        'disponivel': mercadopago.configurado(),
+        'planos': [{'dias': d, 'valor': float(v)} for d, v in PLANOS_DESTAQUE.items()],
+    })
+
+
+@emprego_bp.route('/empregos/<int:vaga_id>/destaque', methods=['POST'])
+@limitar('destaque_criar', 10, 3600)
+def comprar_destaque(vaga_id):
+    dados = request.get_json(silent=True) or {}
+    vaga = _vaga_autorizada(vaga_id, dados)
+    if not vaga or not vaga.ativa:
+        return jsonify({'error': 'Número ou código de gestão inválido'}), 403
+    if vaga.status != 'aprovada':
+        return jsonify({'error': 'O anúncio precisa estar aprovado e no ar para ser destacado'}), 400
+    if not mercadopago.configurado():
+        return jsonify({'error': 'Pagamento por PIX ainda não está disponível'}), 503
+
+    dias = dados.get('dias')
+    if dias not in PLANOS_DESTAQUE:
+        return jsonify({'error': 'Plano inválido'}), 400
+
+    pagamento = PagamentoDestaque(
+        vaga_id=vaga.id, dias=dias, valor=PLANOS_DESTAQUE[dias],
+        expira_em=datetime.utcnow() + timedelta(minutes=MINUTOS_PARA_PAGAR),
+    )
+    db.session.add(pagamento)
+    db.session.flush()
+
+    url_aviso = os.environ.get('URL_PUBLICA')
+    try:
+        mp = mercadopago.criar_pix(
+            valor=pagamento.valor,
+            descricao=f'Destaque de {dias} dias - anúncio {vaga.id}',
+            referencia=pagamento.referencia,
+            expira_em=pagamento.expira_em,
+            notification_url=f'{url_aviso.rstrip("/")}/api/pagamentos/mercadopago' if url_aviso else None,
+        )
+    except mercadopago.ErroPagamento:
+        db.session.rollback()
+        return jsonify({'error': 'Não foi possível gerar o PIX agora. Tente de novo em instantes.'}), 502
+
+    dados_pix = (mp.get('point_of_interaction') or {}).get('transaction_data') or {}
+    pagamento.mp_id = str(mp['id'])
+    pagamento.qr_code = dados_pix.get('qr_code')
+    pagamento.qr_code_base64 = dados_pix.get('qr_code_base64')
+    db.session.commit()
+    return jsonify(pagamento.to_dict(com_qr=True)), 201
+
+
+def _aplicar_se_pago(pagamento):
+    """Consulta o Mercado Pago e, se o PIX foi pago, soma os dias de destaque (uma única vez)."""
+    if pagamento.aplicado or not pagamento.mp_id:
+        return
+    mp = mercadopago.consultar(pagamento.mp_id)
+    status = mp.get('status')
+    if status in ('cancelled', 'rejected', 'refunded', 'charged_back'):
+        pagamento.status = 'cancelado'
+        db.session.commit()
+        return
+    pago = (status == 'approved'
+            and mp.get('external_reference') == pagamento.referencia
+            and Decimal(str(mp.get('transaction_amount', 0))) >= pagamento.valor)
+    if not pago:
+        return
+
+    # UPDATE condicional: se o aviso do Mercado Pago e a consulta do site chegarem juntos,
+    # só um deles aplica o destaque
+    marcado = PagamentoDestaque.query.filter_by(id=pagamento.id, aplicado=False) \
+        .update({'aplicado': True, 'status': 'aprovado'})
+    if marcado:
+        pagamento.vaga.estender_destaque(pagamento.dias)
+    db.session.commit()
+    db.session.refresh(pagamento)
+
+
+@emprego_bp.route('/empregos/destaque/<int:pagamento_id>/status', methods=['POST'])
+@limitar('destaque_status', 120, 600)
+def status_destaque(pagamento_id):
+    """O site pergunta de tempos em tempos se o PIX já foi pago."""
+    pagamento = db.get_or_404(PagamentoDestaque, pagamento_id)
+    dados = request.get_json(silent=True) or {}
+    if not conferir_chave(dados.get('codigo_gestao'), pagamento.vaga.codigo_gestao_hash):
+        return jsonify({'error': 'Código de gestão inválido'}), 403
+    if pagamento.status == 'pendente':
+        try:
+            _aplicar_se_pago(pagamento)
+        except mercadopago.ErroPagamento:
+            pass  # tenta de novo na próxima consulta
+    return jsonify(pagamento.to_dict())
+
+
+@emprego_bp.route('/pagamentos/mercadopago', methods=['POST'])
+@limitar('webhook_mp', 300, 60)
+def aviso_mercadopago():
+    """Aviso (webhook) do Mercado Pago. Não confiamos no conteúdo: consultamos o pagamento na API."""
+    corpo = request.get_json(silent=True) or {}
+    mp_id = str((corpo.get('data') or {}).get('id') or request.args.get('data.id') or request.args.get('id') or '')
+    pagamento = PagamentoDestaque.query.filter_by(mp_id=mp_id).first() if mp_id else None
+    if pagamento and pagamento.status == 'pendente':
+        try:
+            _aplicar_se_pago(pagamento)
+        except mercadopago.ErroPagamento:
+            return '', 500  # o Mercado Pago tenta avisar de novo
+    return '', 200
+
+
 # ---------------------------------------------------------------------------
 # Moderação (equipe, protegida por ANALISTA_TOKEN)
 # ---------------------------------------------------------------------------
@@ -256,9 +395,7 @@ def ativar_destaque(vaga_id):
     dias = (request.get_json(silent=True) or {}).get('dias', 7)
     if not isinstance(dias, int) or not 1 <= dias <= 90:
         return jsonify({'error': 'Dias deve ser um inteiro entre 1 e 90'}), 400
-    inicio = max(vaga.destaque_ate or datetime.utcnow(), datetime.utcnow())
-    vaga.destaque = True
-    vaga.destaque_ate = inicio + timedelta(days=dias)
+    vaga.estender_destaque(dias)
     db.session.commit()
     return jsonify(vaga.to_moderacao_dict())
 

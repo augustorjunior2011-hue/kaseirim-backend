@@ -72,6 +72,13 @@ class Vaga(db.Model):
     def em_destaque(self):
         return bool(self.destaque and (self.destaque_ate is None or self.destaque_ate > datetime.utcnow()))
 
+    def estender_destaque(self, dias):
+        """Soma dias ao destaque (se ainda estiver valendo, conta a partir do fim atual)."""
+        agora = datetime.utcnow()
+        inicio = max(self.destaque_ate or agora, agora)
+        self.destaque = True
+        self.destaque_ate = inicio + timedelta(days=dias)
+
     def publicar(self):
         self.status = 'aprovada'
         self.motivo_moderacao = None
@@ -90,6 +97,7 @@ class Vaga(db.Model):
             'salario': self.salario,
             'telefone_contato': self.telefone_contato,
             'destaque': self.em_destaque,
+            'destaque_ate': self.destaque_ate.isoformat() if self.em_destaque and self.destaque_ate else None,
             'criada_em': self.criada_em.isoformat() if self.criada_em else None,
             'expira_em': self.expira_em.isoformat() if self.expira_em else None,
         }
@@ -120,3 +128,40 @@ class DenunciaVaga(db.Model):
             'detalhe': self.detalhe,
             'data': self.criada_em.isoformat() if self.criada_em else None,
         }
+
+
+class PagamentoDestaque(db.Model):
+    """Pagamento por PIX (Mercado Pago) para destacar um anúncio."""
+    __tablename__ = 'pagamentos_destaque'
+
+    id = db.Column(db.Integer, primary_key=True)
+    vaga_id = db.Column(db.Integer, db.ForeignKey('vagas.id'), nullable=False)
+    dias = db.Column(db.Integer, nullable=False)
+    valor = db.Column(db.Numeric(10, 2), nullable=False)
+    mp_id = db.Column(db.String(40), unique=True, index=True)  # id do pagamento no Mercado Pago
+    status = db.Column(db.String(20), default='pendente', nullable=False)  # pendente / aprovado / cancelado
+    aplicado = db.Column(db.Boolean, default=False, nullable=False)  # destaque já foi somado à vaga
+    qr_code = db.Column(db.Text)
+    qr_code_base64 = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    expira_em = db.Column(db.DateTime)
+
+    vaga = db.relationship('Vaga')
+
+    @property
+    def referencia(self):
+        return f'destaque-{self.id}'
+
+    def to_dict(self, com_qr=False):
+        dados = {
+            'id': self.id,
+            'dias': self.dias,
+            'valor': float(self.valor),
+            'status': self.status,
+            'expira_em': self.expira_em.isoformat() if self.expira_em else None,
+            'destaque_ate': self.vaga.destaque_ate.isoformat() if self.aplicado and self.vaga.destaque_ate else None,
+        }
+        if com_qr:
+            dados['qr_code'] = self.qr_code
+            dados['qr_code_base64'] = self.qr_code_base64
+        return dados
