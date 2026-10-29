@@ -67,6 +67,11 @@ Antes de voltar com ela, validar com advogado:
 
 A equipe pode pedir detalhes ao denunciante pelo chat anônimo (`/mensagens`).
 
+**Painel da equipe** (`/#/equipe/denuncias`, pede o `ANALISTA_TOKEN`): lista com filtros por status,
+tipo de crime e "só crimes graves"; ao abrir uma denúncia, mostra descrição, ponto no mapa, dados do
+suspeito e fotos, e permite mudar o status, escrever um parecer interno (o denunciante não vê) e
+conversar com o denunciante.
+
 ## Endpoints
 
 Públicos (cidadão):
@@ -87,7 +92,7 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/analise/denuncias` | Lista (`status`, `categoria`, `uf`) |
+| GET | `/api/analise/denuncias` | Lista (`status`, `categoria`, `uf`, `grave=1`) |
 | GET/PUT | `/api/analise/denuncias/<id>` | Detalhe / muda status e parecer |
 | GET | `/api/analise/fotos/<id>` | Foto (já sem metadados) |
 | POST | `/api/analise/denuncias/<id>/mensagens` | Mensagem para o denunciante |

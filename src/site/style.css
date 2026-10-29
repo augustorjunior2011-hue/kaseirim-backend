@@ -138,7 +138,8 @@ button.link-denunciar {
 .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .acoes button { flex: 1 1 120px; margin: 0; padding: 10px; }
 
-#mapa { height: 280px; border-radius: var(--raio); border: 1px solid var(--borda); }
+/* isolation: os controles do Leaflet (z-index 1000) não passam por cima do topo fixo */
+#mapa { height: 280px; border-radius: var(--raio); border: 1px solid var(--borda); isolation: isolate; }
 
 .erro { color: var(--alerta); font-weight: 600; margin-top: 12px; }
 
@@ -181,3 +182,35 @@ button.link-denunciar {
   color: var(--suave);
 }
 .rodape a { color: var(--suave); }
+
+.nav-equipe { display: flex; gap: 8px; margin-bottom: 12px; }
+.nav-equipe a {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+.nav-equipe a.ativa { background: var(--primaria); border-color: var(--primaria); color: #fff; }
+
+.filtros label.check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 500;
+}
+.filtros label.check input { width: auto; }
+
+.cartao.clicavel { cursor: pointer; }
+.etiqueta-grave { background: #fde8e8; color: var(--alerta); }
+.texto-grave { color: var(--alerta); }
+.texto-livre { white-space: pre-wrap; }
+.erro.sucesso { color: var(--primaria); }
+
+.fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.fotos img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; display: block; }

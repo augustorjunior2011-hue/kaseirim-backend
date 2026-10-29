@@ -176,6 +176,8 @@ def analise_listar():
         query = query.filter_by(categoria=request.args['categoria'])
     if request.args.get('uf'):
         query = query.filter_by(uf=request.args['uf'].upper())
+    if request.args.get('grave'):
+        query = query.filter(Denuncia.categoria.in_([k for k, v in CATEGORIAS.items() if v['grave']]))
 
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)

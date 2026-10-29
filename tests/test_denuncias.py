@@ -73,6 +73,13 @@ class DenunciaTest(unittest.TestCase):
         self.assertNotIn('recompensa', acomp)
 
 
+    def test_filtro_crimes_graves(self):
+        self.criar(categoria='furto')
+        self.criar(categoria='homicidio')
+        graves = self.client.get('/api/analise/denuncias?grave=1', headers=ANALISTA).get_json()['denuncias']
+        self.assertTrue(graves)
+        self.assertTrue(all(d['grave'] for d in graves))
+
     def test_validacoes(self):
         r = self.client.post('/api/denuncias', json={'categoria': 'xx', 'descricao': 'a' * 30})
         self.assertEqual(r.status_code, 400)

@@ -532,31 +532,41 @@ const ABAS_EQUIPE = {
   rejeitada: 'Rejeitados',
 };
 
-function telaEquipe() {
-  if (!tokenEquipe) {
-    tela.innerHTML = `
-      <h1>Painel da equipe</h1>
-      <form id="form-token">
-        <label>Token de acesso <input name="token" type="password" required autocomplete="off"></label>
-        <button type="submit">Entrar</button>
-      </form>`;
-    const form = document.getElementById('form-token');
-    form.addEventListener('submit', e => {
-      e.preventDefault();
-      enviando(form.querySelector('button'), async () => {
-        try {
-          await api('/analise/empregos', { token: form.token.value });
-          tokenEquipe = form.token.value;
-          telaEquipe();
-        } catch (err) {
-          mostrarErro(form, err.message);
-        }
-      });
+function entrarEquipe(proximo) {
+  tela.innerHTML = `
+    <h1>Painel da equipe</h1>
+    <form id="form-token">
+      <label>Token de acesso <input name="token" type="password" required autocomplete="off"></label>
+      <button type="submit">Entrar</button>
+    </form>`;
+  const form = document.getElementById('form-token');
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    enviando(form.querySelector('button'), async () => {
+      try {
+        await api('/analise/empregos', { token: form.token.value });
+        tokenEquipe = form.token.value;
+        proximo();
+      } catch (err) {
+        mostrarErro(form, err.message);
+      }
     });
-    return;
-  }
+  });
+}
+
+function navEquipe(ativa) {
+  return `
+    <nav class="nav-equipe">
+      <a href="#/equipe" class="${ativa === 'anuncios' ? 'ativa' : ''}">Anúncios</a>
+      <a href="#/equipe/denuncias" class="${ativa === 'denuncias' ? 'ativa' : ''}">Denúncias</a>
+    </nav>`;
+}
+
+function telaEquipe() {
+  if (!tokenEquipe) return entrarEquipe(telaEquipe);
 
   tela.innerHTML = `
+    ${navEquipe('anuncios')}
     <h1>Moderação de anúncios</h1>
     <div class="opcoes" id="abas">
       ${Object.entries(ABAS_EQUIPE).map(([k, v], i) =>
@@ -637,6 +647,210 @@ function cartaoModeracao(v) {
 }
 
 // ---------------------------------------------------------------------------
+// Painel da equipe: análise das denúncias
+// ---------------------------------------------------------------------------
+
+const FACCIONADO = { sim: 'Sim', nao: 'Não', nao_sei: 'Não sabe' };
+let nomesCategorias = null;
+
+async function carregarNomesCategorias() {
+  if (!nomesCategorias) {
+    const categorias = await api('/denuncias/categorias');
+    nomesCategorias = Object.fromEntries(categorias.map(c => [c.id, c.nome]));
+  }
+  return nomesCategorias;
+}
+
+async function telaEquipeDenuncias() {
+  if (!tokenEquipe) return entrarEquipe(telaEquipeDenuncias);
+
+  tela.innerHTML = `
+    ${navEquipe('denuncias')}
+    <h1>Denúncias</h1>
+    <form id="filtros-denuncias" class="filtros">
+      <select name="status">
+        <option value="">Todos os status</option>
+        ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === 'recebida' ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>
+      <select name="categoria"><option value="">Todos os crimes</option></select>
+      <label class="check"><input type="checkbox" name="grave" value="1"> Só crimes graves</label>
+    </form>
+    <div id="lista-denuncias"><p class="suave">Carregando...</p></div>`;
+
+  const filtros = document.getElementById('filtros-denuncias');
+  const lista = document.getElementById('lista-denuncias');
+  const nomes = await carregarNomesCategorias();
+  filtros.categoria.insertAdjacentHTML('beforeend',
+    Object.entries(nomes).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(''));
+
+  async function carregar() {
+    const params = new URLSearchParams(Object.entries(formDados(filtros)).filter(([, v]) => v));
+    lista.innerHTML = '<p class="suave">Carregando...</p>';
+    try {
+      const { denuncias, total } = await api('/analise/denuncias?' + params, { token: tokenEquipe });
+      lista.innerHTML = `<p class="suave">${total} denúncia(s)</p>` + (denuncias.length
+        ? denuncias.map(d => `
+          <article class="cartao clicavel" data-denuncia="${d.id}">
+            <span class="etiqueta">${esc(nomes[d.categoria] || d.categoria)}</span>
+            ${d.grave ? '<span class="etiqueta etiqueta-grave">Grave</span>' : ''}
+            ${d.fotos.length ? `<span class="etiqueta">${d.fotos.length} foto(s)</span>` : ''}
+            <h3>${esc(STATUS[d.status] || d.status)}</h3>
+            <p class="suave">${esc([d.localizacao.cidade && `${d.localizacao.cidade}/${d.localizacao.uf || ''}`, d.criada_em].filter(Boolean).join(' · '))}</p>
+            <p>${esc(d.descricao.length > 160 ? d.descricao.slice(0, 160) + '…' : d.descricao)}</p>
+          </article>`).join('')
+        : '<p class="suave">Nenhuma denúncia aqui.</p>');
+    } catch (err) {
+      lista.innerHTML = `<p class="erro">${esc(err.message)}</p>`;
+    }
+  }
+
+  filtros.addEventListener('change', carregar);
+  lista.addEventListener('click', e => {
+    const cartao = e.target.closest('[data-denuncia]');
+    if (cartao) detalheDenuncia(cartao.dataset.denuncia, nomes);
+  });
+  carregar();
+}
+
+async function fotoComToken(fotoId) {
+  const resp = await fetch(`/api/analise/fotos/${fotoId}`, {
+    headers: { Authorization: 'Bearer ' + tokenEquipe }, credentials: 'omit', cache: 'no-store',
+  });
+  if (!resp.ok) throw new Error('Não foi possível carregar a foto');
+  return URL.createObjectURL(await resp.blob());
+}
+
+async function detalheDenuncia(id, nomes) {
+  tela.innerHTML = '<p class="suave">Carregando...</p>';
+  let d;
+  try {
+    d = await api(`/analise/denuncias/${id}`, { token: tokenEquipe });
+  } catch (err) {
+    tela.innerHTML = `<p class="erro">${esc(err.message)}</p>`;
+    return;
+  }
+  const loc = d.localizacao;
+  const sus = d.suspeito;
+  const temPonto = loc.latitude != null && loc.longitude != null;
+
+  const linha = (rotulo, valor) => valor ? `<p><strong>${rotulo}:</strong> ${esc(valor)}</p>` : '';
+
+  window.scrollTo(0, 0);
+  tela.innerHTML = `
+    ${navEquipe('denuncias')}
+    <button type="button" class="secundario" id="voltar-lista">← Voltar para a lista</button>
+    <h1 style="margin-top:16px">${esc(nomes[d.categoria] || d.categoria)}</h1>
+    <p class="suave">Protocolo ${esc(d.protocolo)} · recebida em ${esc(d.criada_em)}
+      ${d.grave ? ' · <strong class="texto-grave">crime grave</strong>' : ''}</p>
+
+    <div class="cartao">
+      <h3>O que aconteceu</h3>
+      <p class="texto-livre">${esc(d.descricao)}</p>
+      ${linha('Quando', d.data_ocorrencia)}
+    </div>
+
+    <div class="cartao">
+      <h3>Onde</h3>
+      ${linha('Referência', loc.referencia)}
+      ${linha('Cidade', [loc.cidade, loc.uf].filter(Boolean).join('/'))}
+      ${temPonto ? `<p class="suave">${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}</p><div id="mapa"></div>`
+        : '<p class="suave">Sem ponto marcado no mapa.</p>'}
+    </div>
+
+    <div class="cartao">
+      <h3>Suspeito</h3>
+      ${linha('Nome', sus.nome)}
+      ${linha('Apelidos', sus.apelidos)}
+      ${linha('Características', sus.caracteristicas)}
+      ${linha('Faccionado', FACCIONADO[sus.faccionado] || sus.faccionado)}
+      ${linha('Facção', sus.faccao)}
+      ${!sus.nome && !sus.apelidos && !sus.caracteristicas ? '<p class="suave">Sem dados do suspeito.</p>' : ''}
+    </div>
+
+    ${d.fotos.length ? `<div class="cartao"><h3>Fotos</h3><div class="fotos" id="fotos"></div></div>` : ''}
+
+    <div class="cartao">
+      <h3>Análise</h3>
+      <form id="form-analise">
+        <label>Status
+          <select name="status">${Object.entries(STATUS).map(([k, v]) =>
+            `<option value="${k}" ${k === d.status ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label>Parecer interno <span class="suave">(o denunciante não vê)</span>
+          <textarea name="parecer_analise">${esc(d.parecer_analise || '')}</textarea></label>
+        <button type="submit">Salvar análise</button>
+      </form>
+    </div>
+
+    <div class="cartao">
+      <h3>Conversa com o denunciante</h3>
+      <div id="mensagens-equipe">${mensagensHTML(d.mensagens)}</div>
+      <form id="form-msg-equipe">
+        <label>Nova mensagem <span class="suave">(o denunciante vê ao acompanhar)</span>
+          <textarea name="texto" required maxlength="3000" placeholder="Ex.: Você sabe o horário em que ele costuma estar no local?"></textarea></label>
+        <button type="submit">Enviar mensagem</button>
+      </form>
+    </div>`;
+
+  document.getElementById('voltar-lista').addEventListener('click', telaEquipeDenuncias);
+
+  if (temPonto) {
+    const mapa = L.map('mapa').setView([loc.latitude, loc.longitude], 16);
+    L.tileLayer('/api/mapa/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(mapa);
+    L.marker([loc.latitude, loc.longitude]).addTo(mapa);
+  }
+
+  if (d.fotos.length) {
+    const area = document.getElementById('fotos');
+    for (const fotoId of d.fotos) {
+      try {
+        const url = await fotoComToken(fotoId);
+        area.insertAdjacentHTML('beforeend', `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Foto da denúncia"></a>`);
+      } catch (err) {
+        area.insertAdjacentHTML('beforeend', `<p class="erro">${esc(err.message)}</p>`);
+      }
+    }
+  }
+
+  const formAnalise = document.getElementById('form-analise');
+  formAnalise.addEventListener('submit', e => {
+    e.preventDefault();
+    enviando(formAnalise.querySelector('button'), async () => {
+      try {
+        await api(`/analise/denuncias/${id}`, { method: 'PUT', json: formDados(formAnalise), token: tokenEquipe });
+        mostrarErro(formAnalise, 'Análise salva.');
+        formAnalise.querySelector('.erro').classList.add('sucesso');
+      } catch (err) {
+        mostrarErro(formAnalise, err.message);
+      }
+    });
+  });
+
+  const formMsg = document.getElementById('form-msg-equipe');
+  formMsg.addEventListener('submit', e => {
+    e.preventDefault();
+    enviando(formMsg.querySelector('button'), async () => {
+      try {
+        const atual = await api(`/analise/denuncias/${id}/mensagens`, {
+          method: 'POST', json: formDados(formMsg), token: tokenEquipe,
+        });
+        document.getElementById('mensagens-equipe').innerHTML = mensagensHTML(atual.mensagens);
+        formMsg.reset();
+      } catch (err) {
+        mostrarErro(formMsg, err.message);
+      }
+    });
+  });
+}
+
+function mensagensHTML(mensagens) {
+  return mensagens.length ? mensagens.map(m => `
+    <div class="mensagem ${m.autor === 'equipe' ? 'equipe' : 'cidadao'}">
+      <strong>${m.autor === 'equipe' ? 'Equipe' : 'Denunciante'}:</strong> ${esc(m.texto)}
+      <span class="suave">(${esc(m.data)})</span>
+    </div>`).join('') : '<p class="suave">Nenhuma mensagem ainda.</p>';
+}
+
+// ---------------------------------------------------------------------------
 // Rotas
 // ---------------------------------------------------------------------------
 
@@ -648,6 +862,7 @@ const ROTAS = {
   '/denunciar': telaDenunciar,
   '/acompanhar': telaAcompanhar,
   '/equipe': telaEquipe,
+  '/equipe/denuncias': telaEquipeDenuncias,
 };
 const ROTAS_CANAL = ['/canal', '/denunciar', '/acompanhar'];
 
