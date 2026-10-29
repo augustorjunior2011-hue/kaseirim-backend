@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0f766e">
+  <title>Vagas Perto</title>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topo">
+    <a href="#/" class="marca">Vagas Perto</a>
+    <nav>
+      <a href="#/">Vagas</a>
+      <a href="#/publicar">Anunciar</a>
+    </nav>
+  </header>
+
+  <!-- Aparece só nas telas do canal seguro -->
+  <button id="sair-rapido" class="sair-rapido" hidden>Sair rápido ✕</button>
+
+  <main id="tela"></main>
+
+  <footer class="rodape">
+    <a href="#/canal">Canal seguro</a>
+    <span>·</span>
+    <a href="#/gerenciar">Gerenciar meu anúncio</a>
+  </footer>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
