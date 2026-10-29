@@ -31,6 +31,20 @@ Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask na raiz do dom
 - **Datas sem horário.** Denúncias e mensagens registram apenas o dia.
 - **Localização** é o ponto que o cidadão marca no mapa, não o GPS do aparelho.
 
+## Vagas de emprego
+
+- **Quem procura trabalho** publica na hora. **Vagas de empresas** só vão para o ar depois que a
+  equipe aprova, no painel `/#/equipe` (não há link para ele no site; pede o `ANALISTA_TOKEN`).
+- **Palavras suspeitas** (taxa, pix antecipado, investimento...) mandam qualquer anúncio para a fila
+  de aprovação. Lista em `PALAVRAS_SUSPEITAS` (`src/models/emprego.py`).
+- **Denunciar anúncio:** qualquer pessoa marca um anúncio como golpe. Com 3 denúncias ele sai do ar e
+  volta para a fila. Se a equipe aprovar de novo, o contador zera.
+- **Limite de 3 anúncios ativos por telefone.**
+- **Anúncio editado** volta para a fila (evita trocar o texto depois de aprovado).
+- **Filtro por cidade:** os nomes são padronizados ("rio DE janeiro" vira "Rio de Janeiro") e o
+  filtro mostra só cidades que têm anúncios no ar.
+- Validade de 30 dias, contados a partir da aprovação.
+
 ## Recompensas (suspenso)
 
 A parte de recompensas foi retirada por enquanto. Ela existiu no commit `e275b1f` e pode ser
@@ -63,9 +77,11 @@ Públicos (cidadão):
 | POST | `/api/denuncias` | Cria denúncia (JSON ou multipart com até 5 `fotos`) → protocolo + chave |
 | POST | `/api/denuncias/acompanhar` | `{protocolo, chave}` → status e mensagens |
 | POST | `/api/denuncias/mensagens` | `{protocolo, chave, texto}` → complementa a denúncia |
-| GET | `/api/empregos` | Lista vagas (`tipo`, `uf`, `cidade`, `busca`); destaques primeiro |
+| GET | `/api/empregos` | Lista vagas aprovadas (`tipo`, `uf`, `cidade`, `busca`); destaques primeiro |
+| GET | `/api/empregos/cidades` | Cidades com anúncios no ar (`uf` opcional) |
 | POST | `/api/empregos` | Publica oferta/procura → `codigo_gestao` |
 | PUT/DELETE | `/api/empregos/<id>` | Edita/remove com `codigo_gestao` |
+| POST | `/api/empregos/<id>/denunciar` | `{motivo, detalhe?}` marca anúncio como golpe/abusivo |
 
 Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 
@@ -75,6 +91,9 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 | GET/PUT | `/api/analise/denuncias/<id>` | Detalhe / muda status e parecer |
 | GET | `/api/analise/fotos/<id>` | Foto (já sem metadados) |
 | POST | `/api/analise/denuncias/<id>/mensagens` | Mensagem para o denunciante |
+| GET | `/api/analise/empregos` | Fila de moderação (`status=pendente|aprovada|rejeitada`) |
+| POST | `/api/analise/empregos/<id>/aprovar` | Coloca o anúncio no ar |
+| POST | `/api/analise/empregos/<id>/rejeitar` | `{motivo?}` tira/recusa o anúncio |
 | POST | `/api/analise/empregos/<id>/destaque` | `{dias}` ativa destaque pago |
 | DELETE | `/api/analise/empregos/<id>` | Remove anúncio abusivo/golpe |
 

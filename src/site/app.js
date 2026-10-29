@@ -33,6 +33,7 @@ function esc(texto) {
 
 async function api(caminho, opcoes = {}) {
   const config = { method: opcoes.method || 'GET', headers: {}, credentials: 'omit', cache: 'no-store' };
+  if (opcoes.token) config.headers.Authorization = 'Bearer ' + opcoes.token;
   if (opcoes.form) {
     config.body = opcoes.form;
   } else if (opcoes.json) {
@@ -107,10 +108,22 @@ async function prepararFoto(arquivo) {
 // Empregos (página inicial)
 // ---------------------------------------------------------------------------
 
+const MOTIVOS_DENUNCIA_VAGA = {
+  golpe: 'Parece golpe',
+  cobra_taxa: 'Pede dinheiro / taxa',
+  vaga_inexistente: 'Vaga não existe',
+  conteudo_ofensivo: 'Conteúdo ofensivo',
+  outro: 'Outro motivo',
+};
+
+const AVISO_GOLPE = `
+  <div class="aviso aviso-golpe"><strong>Cuidado com golpes:</strong> nenhuma empresa séria cobra
+    para contratar. Não pague taxa, curso, uniforme ou exame para conseguir uma vaga.</div>`;
+
 function cartaoVaga(v) {
   const whats = `https://wa.me/55${v.telefone_contato}`;
   return `
-    <article class="cartao ${v.destaque ? 'destaque' : ''}">
+    <article class="cartao ${v.destaque ? 'destaque' : ''}" data-vaga="${v.id}">
       <span class="etiqueta">${v.tipo === 'oferta' ? 'Vaga' : 'Procuro trabalho'}</span>
       ${v.destaque ? '<span class="etiqueta">Destaque</span>' : ''}
       <h3>${esc(v.titulo)}</h3>
@@ -118,7 +131,21 @@ function cartaoVaga(v) {
       <p>${esc(v.descricao)}</p>
       <p><a href="tel:${esc(v.telefone_contato)}">${esc(telefoneFormatado(v.telefone_contato))}</a>
         · <a href="${esc(whats)}" target="_blank" rel="noopener noreferrer">WhatsApp</a></p>
+      <button type="button" class="link-denunciar">Denunciar anúncio</button>
     </article>`;
+}
+
+function formDenunciaVaga() {
+  return `
+    <form class="form-denuncia-vaga">
+      <label>O que há de errado?
+        <select name="motivo" required>
+          <option value="">Selecione</option>
+          ${Object.entries(MOTIVOS_DENUNCIA_VAGA).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+        </select></label>
+      <label>Detalhes <span class="suave">(opcional)</span> <input name="detalhe" maxlength="500"></label>
+      <button type="submit">Enviar denúncia</button>
+    </form>`;
 }
 
 async function telaVagas() {
@@ -132,15 +159,40 @@ async function telaVagas() {
         <option value="procura">Quem procura</option>
       </select>
       <select name="uf">${opcoesUF()}</select>
+      <select name="cidade"><option value="">Todas as cidades</option></select>
     </form>
+    ${AVISO_GOLPE}
     <div id="lista"><p class="suave">Carregando...</p></div>
     <a class="botao" href="#/publicar">Anunciar grátis</a>`;
 
   const filtros = document.getElementById('filtros');
   const lista = document.getElementById('lista');
+  const selectCidade = filtros.cidade;
+
+  // Só aparecem cidades que têm anúncios no ar
+  async function carregarCidades() {
+    const uf = filtros.uf.value;
+    const atual = selectCidade.value;
+    try {
+      const cidades = await api('/empregos/cidades' + (uf ? `?uf=${uf}` : ''));
+      selectCidade.innerHTML = '<option value="">Todas as cidades</option>' + cidades.map(c => {
+        const rotulo = uf ? c.cidade : `${c.cidade}/${c.uf}`;
+        const valor = `${c.cidade}|${c.uf}`;
+        return `<option value="${esc(valor)}" ${valor === atual ? 'selected' : ''}>${esc(rotulo)} (${c.total})</option>`;
+      }).join('');
+    } catch {
+      // filtro de cidade é opcional; a lista continua funcionando
+    }
+  }
 
   async function carregar() {
-    const params = new URLSearchParams(Object.entries(formDados(filtros)).filter(([, v]) => v));
+    const dados = formDados(filtros);
+    if (dados.cidade) {
+      const [cidade, uf] = dados.cidade.split('|');
+      dados.cidade = cidade;
+      dados.uf = uf;
+    }
+    const params = new URLSearchParams(Object.entries(dados).filter(([, v]) => v));
     try {
       const { vagas } = await api('/empregos?' + params);
       lista.innerHTML = vagas.length ? vagas.map(cartaoVaga).join('')
@@ -151,8 +203,38 @@ async function telaVagas() {
   }
 
   let espera;
-  filtros.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(carregar, 300); });
+  filtros.addEventListener('input', e => {
+    if (e.target.name === 'uf') {
+      selectCidade.value = '';
+      carregarCidades();
+    }
+    clearTimeout(espera);
+    espera = setTimeout(carregar, 300);
+  });
   filtros.addEventListener('submit', e => { e.preventDefault(); carregar(); });
+
+  // Denunciar anúncio: abre um formulário dentro do próprio cartão
+  lista.addEventListener('click', e => {
+    const botao = e.target.closest('.link-denunciar');
+    if (!botao) return;
+    const cartao = botao.closest('[data-vaga]');
+    botao.remove();
+    cartao.insertAdjacentHTML('beforeend', formDenunciaVaga());
+    const form = cartao.querySelector('.form-denuncia-vaga');
+    form.addEventListener('submit', ev => {
+      ev.preventDefault();
+      enviando(form.querySelector('button'), async () => {
+        try {
+          const r = await api(`/empregos/${cartao.dataset.vaga}/denunciar`, { method: 'POST', json: formDados(form) });
+          form.outerHTML = `<p class="suave">${esc(r.message)}</p>`;
+        } catch (err) {
+          mostrarErro(form, err.message);
+        }
+      });
+    });
+  });
+
+  carregarCidades();
   carregar();
 }
 
@@ -164,12 +246,14 @@ function telaPublicar() {
         <label><input type="radio" name="tipo" value="oferta" checked> Tenho uma vaga</label>
         <label><input type="radio" name="tipo" value="procura"> Procuro trabalho</label>
       </div>
+      <p id="aviso-aprovacao" class="suave">Vagas de empresas são conferidas pela nossa equipe antes de ir para o ar.</p>
       <label>Título <input name="titulo" required maxlength="150" placeholder="Ex.: Auxiliar de cozinha"></label>
       <label>Descrição <textarea name="descricao" required maxlength="5000"
         placeholder="Horário, requisitos, benefícios ou sua experiência"></textarea></label>
       <label>Empresa <span class="suave">(opcional)</span> <input name="empresa" maxlength="150"></label>
       <label>Salário <span class="suave">(opcional)</span> <input name="salario" maxlength="60" placeholder="Ex.: R$ 1.800"></label>
-      <label>Cidade <input name="cidade" required maxlength="100"></label>
+      <label>Cidade <input name="cidade" required maxlength="100" list="cidades-conhecidas" autocomplete="off"></label>
+      <datalist id="cidades-conhecidas"></datalist>
       <label>UF <select name="uf" required>${opcoesUF()}</select></label>
       <label>Telefone / WhatsApp para contato
         <input name="telefone_contato" required inputmode="tel" placeholder="(21) 99999-0000"></label>
@@ -177,17 +261,30 @@ function telaPublicar() {
     </form>`;
 
   const form = document.getElementById('form-vaga');
+  form.querySelectorAll('input[name="tipo"]').forEach(r => r.addEventListener('change', () => {
+    document.getElementById('aviso-aprovacao').hidden = form.tipo.value !== 'oferta';
+  }));
+
+  // Sugere cidades já usadas, para todo mundo escrever o nome do mesmo jeito
+  api('/empregos/cidades').then(cidades => {
+    document.getElementById('cidades-conhecidas').innerHTML =
+      [...new Set(cidades.map(c => c.cidade))].map(c => `<option value="${esc(c)}">`).join('');
+  }).catch(() => {});
+
   form.addEventListener('submit', e => {
     e.preventDefault();
     enviando(form.querySelector('button'), async () => {
       try {
         const r = await api('/empregos', { method: 'POST', json: formDados(form) });
+        const noAr = r.status === 'aprovada';
         tela.innerHTML = `
-          <h1>Anúncio publicado</h1>
-          <p>Para remover o anúncio depois, você vai precisar destes dados. Anote:</p>
+          <h1>${noAr ? 'Anúncio publicado' : 'Anúncio enviado para aprovação'}</h1>
+          ${noAr ? '' : `<div class="aviso">Nossa equipe vai conferir o anúncio. Quando for aprovado,
+            ele aparece na lista de vagas.</div>`}
+          <p style="margin-top:12px">Para remover o anúncio depois, você vai precisar destes dados. Anote:</p>
           <div class="credenciais">Nº ${r.vaga.id}<br>${esc(r.codigo_gestao)}
             <small>Número do anúncio e código de gestão</small></div>
-          <p class="suave" style="margin-top:12px">O anúncio fica no ar por 30 dias.</p>
+          <p class="suave" style="margin-top:12px">O anúncio fica no ar por 30 dias${noAr ? '' : ' a partir da aprovação'}.</p>
           <a class="botao" href="#/">Ver anúncios</a>`;
       } catch (err) {
         mostrarErro(form, err.message);
@@ -423,6 +520,123 @@ function mostrarAndamento(d, credenciais) {
 }
 
 // ---------------------------------------------------------------------------
+// Painel da equipe (moderação de anúncios). Não há link para ele no site: acesse /#/equipe.
+// O token fica só na memória da página; recarregar pede de novo.
+// ---------------------------------------------------------------------------
+
+let tokenEquipe = '';
+
+const ABAS_EQUIPE = {
+  pendente: 'Aguardando aprovação',
+  aprovada: 'No ar',
+  rejeitada: 'Rejeitados',
+};
+
+function telaEquipe() {
+  if (!tokenEquipe) {
+    tela.innerHTML = `
+      <h1>Painel da equipe</h1>
+      <form id="form-token">
+        <label>Token de acesso <input name="token" type="password" required autocomplete="off"></label>
+        <button type="submit">Entrar</button>
+      </form>`;
+    const form = document.getElementById('form-token');
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      enviando(form.querySelector('button'), async () => {
+        try {
+          await api('/analise/empregos', { token: form.token.value });
+          tokenEquipe = form.token.value;
+          telaEquipe();
+        } catch (err) {
+          mostrarErro(form, err.message);
+        }
+      });
+    });
+    return;
+  }
+
+  tela.innerHTML = `
+    <h1>Moderação de anúncios</h1>
+    <div class="opcoes" id="abas">
+      ${Object.entries(ABAS_EQUIPE).map(([k, v], i) =>
+        `<label><input type="radio" name="aba" value="${k}" ${i ? '' : 'checked'}> ${v}</label>`).join('')}
+    </div>
+    <div id="fila" style="margin-top:12px"></div>`;
+
+  const fila = document.getElementById('fila');
+
+  async function carregar() {
+    const status = document.querySelector('input[name="aba"]:checked').value;
+    fila.innerHTML = '<p class="suave">Carregando...</p>';
+    try {
+      const vagas = await api(`/analise/empregos?status=${status}`, { token: tokenEquipe });
+      fila.innerHTML = vagas.length ? vagas.map(cartaoModeracao).join('')
+        : '<p class="suave">Nenhum anúncio aqui.</p>';
+    } catch (err) {
+      fila.innerHTML = `<p class="erro">${esc(err.message)}</p>`;
+    }
+  }
+
+  document.getElementById('abas').addEventListener('change', carregar);
+
+  fila.addEventListener('click', async e => {
+    const botao = e.target.closest('button[data-acao]');
+    if (!botao) return;
+    const id = botao.closest('[data-vaga]').dataset.vaga;
+    const acao = botao.dataset.acao;
+    let motivo = '';
+    if (acao === 'rejeitar') {
+      motivo = prompt('Motivo (opcional):', '');
+      if (motivo === null) return;
+    }
+    if (acao === 'remover' && !confirm('Remover este anúncio definitivamente?')) return;
+    const pedidos = {
+      aprovar: [`/analise/empregos/${id}/aprovar`, 'POST', {}],
+      rejeitar: [`/analise/empregos/${id}/rejeitar`, 'POST', { motivo }],
+      destaque: [`/analise/empregos/${id}/destaque`, 'POST', { dias: 7 }],
+      remover: [`/analise/empregos/${id}`, 'DELETE', {}],
+    };
+    const [caminho, method, json] = pedidos[acao];
+    await enviando(botao, async () => {
+      try {
+        await api(caminho, { method, json, token: tokenEquipe });
+        carregar();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  carregar();
+}
+
+function cartaoModeracao(v) {
+  const denuncias = v.denuncias.map(d =>
+    `<li>${esc(MOTIVOS_DENUNCIA_VAGA[d.motivo] || d.motivo)}${d.detalhe ? `: ${esc(d.detalhe)}` : ''} <span class="suave">(${esc(d.data)})</span></li>`).join('');
+  const botoes = {
+    pendente: [['aprovar', 'Aprovar'], ['rejeitar', 'Rejeitar']],
+    aprovada: [['destaque', 'Destaque 7 dias'], ['rejeitar', 'Tirar do ar']],
+    rejeitada: [['aprovar', 'Aprovar mesmo assim']],
+  }[v.status];
+  return `
+    <article class="cartao" data-vaga="${v.id}">
+      <span class="etiqueta">Nº ${v.id}</span>
+      <span class="etiqueta">${v.tipo === 'oferta' ? 'Vaga' : 'Procuro trabalho'}</span>
+      ${v.destaque ? '<span class="etiqueta">Destaque</span>' : ''}
+      ${v.motivo_moderacao ? `<p class="erro" style="margin-top:8px">${esc(v.motivo_moderacao)}</p>` : ''}
+      <h3>${esc(v.titulo)}</h3>
+      <p class="suave">${esc([v.empresa, `${v.cidade}/${v.uf}`, v.salario, telefoneFormatado(v.telefone_contato)].filter(Boolean).join(' · '))}</p>
+      <p>${esc(v.descricao)}</p>
+      ${denuncias ? `<p><strong>Denúncias de usuários:</strong></p><ul>${denuncias}</ul>` : ''}
+      <div class="acoes">
+        ${botoes.map(([acao, rotulo]) => `<button type="button" data-acao="${acao}">${rotulo}</button>`).join('')}
+        <button type="button" class="secundario" data-acao="remover">Remover</button>
+      </div>
+    </article>`;
+}
+
+// ---------------------------------------------------------------------------
 // Rotas
 // ---------------------------------------------------------------------------
 
@@ -433,6 +647,7 @@ const ROTAS = {
   '/canal': telaCanal,
   '/denunciar': telaDenunciar,
   '/acompanhar': telaAcompanhar,
+  '/equipe': telaEquipe,
 };
 const ROTAS_CANAL = ['/canal', '/denunciar', '/acompanhar'];
 

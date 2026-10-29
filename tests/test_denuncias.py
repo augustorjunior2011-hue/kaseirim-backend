@@ -84,34 +84,94 @@ class EmpregoTest(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
 
-    def test_publicar_editar_destacar_remover(self):
-        r = self.client.post('/api/empregos', json={
-            'tipo': 'oferta', 'titulo': 'Auxiliar de cozinha', 'descricao': 'Turno da noite',
-            'cidade': 'Niterói', 'uf': 'rj', 'telefone_contato': '(21) 99999-0000',
-        })
-        self.assertEqual(r.status_code, 201)
-        vaga, codigo = r.get_json()['vaga'], r.get_json()['codigo_gestao']
-        self.assertEqual(vaga['telefone_contato'], '21999990000')
+    def publicar(self, telefone, tipo='oferta', **extra):
+        dados = {
+            'tipo': tipo, 'titulo': 'Auxiliar de cozinha', 'descricao': 'Turno da noite',
+            'cidade': 'niterói', 'uf': 'rj', 'telefone_contato': telefone, **extra,
+        }
+        r = self.client.post('/api/empregos', json=dados)
+        return r.status_code, r.get_json()
 
-        self.client.post('/api/empregos', json={
-            'tipo': 'procura', 'titulo': 'Procuro vaga de motorista', 'descricao': 'CNH D',
-            'cidade': 'Niterói', 'uf': 'RJ', 'telefone_contato': '21988880000',
-        })
+    def ids_no_ar(self, query=''):
+        return [v['id'] for v in self.client.get('/api/empregos' + query).get_json()['vagas']]
 
-        r = self.client.put(f"/api/empregos/{vaga['id']}", json={'codigo_gestao': 'errado', 'salario': 'R$ 2.000'})
-        self.assertEqual(r.status_code, 403)
-        r = self.client.put(f"/api/empregos/{vaga['id']}", json={'codigo_gestao': codigo, 'salario': 'R$ 2.000'})
-        self.assertEqual(r.get_json()['salario'], 'R$ 2.000')
+    def test_oferta_precisa_de_aprovacao_e_procura_publica_na_hora(self):
+        status, oferta = self.publicar('21900000001')
+        self.assertEqual(status, 201)
+        self.assertEqual(oferta['status'], 'pendente')
+        self.assertEqual(oferta['vaga']['telefone_contato'], '21900000001')
+        self.assertNotIn(oferta['vaga']['id'], self.ids_no_ar())
 
-        self.client.post(f"/api/analise/empregos/{vaga['id']}/destaque", json={'dias': 7}, headers=ANALISTA)
-        lista = self.client.get('/api/empregos?uf=RJ').get_json()['vagas']
-        self.assertEqual(lista[0]['id'], vaga['id'])
-        self.assertTrue(lista[0]['destaque'])
+        _, procura = self.publicar('21900000002', tipo='procura', titulo='Procuro vaga de motorista')
+        self.assertEqual(procura['status'], 'aprovada')
+        self.assertIn(procura['vaga']['id'], self.ids_no_ar())
 
-        r = self.client.delete(f"/api/empregos/{vaga['id']}", json={'codigo_gestao': codigo})
-        self.assertEqual(r.status_code, 204)
-        ids = [v['id'] for v in self.client.get('/api/empregos').get_json()['vagas']]
-        self.assertNotIn(vaga['id'], ids)
+        self.assertEqual(self.client.get('/api/analise/empregos').status_code, 401)
+        fila = self.client.get('/api/analise/empregos', headers=ANALISTA).get_json()
+        self.assertIn(oferta['vaga']['id'], [v['id'] for v in fila])
+
+        self.client.post(f"/api/analise/empregos/{oferta['vaga']['id']}/aprovar", headers=ANALISTA)
+        self.assertIn(oferta['vaga']['id'], self.ids_no_ar())
+
+    def test_palavras_suspeitas_vao_para_moderacao(self):
+        _, r = self.publicar('21900000003', tipo='procura', descricao='Pague a taxa de cadastro via PIX')
+        self.assertEqual(r['status'], 'pendente')
+        fila = self.client.get('/api/analise/empregos', headers=ANALISTA).get_json()
+        vaga = next(v for v in fila if v['id'] == r['vaga']['id'])
+        self.assertIn('taxa', vaga['motivo_moderacao'])
+
+    def test_limite_de_anuncios_por_telefone(self):
+        for _ in range(3):
+            self.assertEqual(self.publicar('21900000004')[0], 201)
+        status, r = self.publicar('21900000004')
+        self.assertEqual(status, 429)
+
+    def test_filtro_por_cidade(self):
+        _, a = self.publicar('31900000001', tipo='procura', cidade='  belo   HORIZONTE ', uf='MG')
+        _, b = self.publicar('31900000002', tipo='procura', cidade='Contagem', uf='MG')
+        self.assertEqual(a['vaga']['cidade'], 'Belo Horizonte')
+
+        cidades = self.client.get('/api/empregos/cidades?uf=MG').get_json()
+        self.assertEqual([c['cidade'] for c in cidades], ['Belo Horizonte', 'Contagem'])
+
+        ids = self.ids_no_ar('?cidade=belo horizonte&uf=MG')
+        self.assertIn(a['vaga']['id'], ids)
+        self.assertNotIn(b['vaga']['id'], ids)
+
+    def test_denuncias_de_usuarios_tiram_anuncio_do_ar(self):
+        _, r = self.publicar('21900000005', tipo='procura')
+        vid = r['vaga']['id']
+        self.assertEqual(self.client.post(f'/api/empregos/{vid}/denunciar', json={'motivo': 'x'}).status_code, 400)
+        for _ in range(3):
+            resp = self.client.post(f'/api/empregos/{vid}/denunciar', json={'motivo': 'cobra_taxa'})
+            self.assertEqual(resp.status_code, 201)
+        self.assertNotIn(vid, self.ids_no_ar())
+
+        self.client.post(f'/api/analise/empregos/{vid}/aprovar', headers=ANALISTA)
+        self.assertIn(vid, self.ids_no_ar())
+        # contador zera ao aprovar: uma nova denúncia não derruba de novo
+        self.client.post(f'/api/empregos/{vid}/denunciar', json={'motivo': 'golpe'})
+        self.assertIn(vid, self.ids_no_ar())
+
+    def test_editar_remover_e_destaque(self):
+        _, r = self.publicar('21900000006')
+        vid, codigo = r['vaga']['id'], r['codigo_gestao']
+        self.client.post(f'/api/analise/empregos/{vid}/aprovar', headers=ANALISTA)
+
+        resp = self.client.put(f'/api/empregos/{vid}', json={'codigo_gestao': 'errado', 'salario': 'R$ 2.000'})
+        self.assertEqual(resp.status_code, 403)
+        resp = self.client.put(f'/api/empregos/{vid}', json={'codigo_gestao': codigo, 'salario': 'R$ 2.000'})
+        self.assertEqual(resp.get_json()['salario'], 'R$ 2.000')
+        self.assertEqual(resp.get_json()['status'], 'pendente')  # vaga editada volta para aprovação
+
+        self.client.post(f'/api/analise/empregos/{vid}/aprovar', headers=ANALISTA)
+        self.client.post(f'/api/analise/empregos/{vid}/destaque', json={'dias': 7}, headers=ANALISTA)
+        vagas = self.client.get('/api/empregos').get_json()['vagas']
+        self.assertEqual(vagas[0]['id'], vid)
+        self.assertTrue(vagas[0]['destaque'])
+
+        self.assertEqual(self.client.delete(f'/api/empregos/{vid}', json={'codigo_gestao': codigo}).status_code, 204)
+        self.assertNotIn(vid, self.ids_no_ar())
 
 
 class MapaTest(unittest.TestCase):

@@ -118,7 +118,25 @@ button.secundario, .botao.secundario { background: #fff; color: var(--primaria);
 button:disabled { opacity: .6; }
 
 .filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-.filtros input:first-child { grid-column: 1 / -1; }
+.filtros input:first-child, .filtros select[name="cidade"] { grid-column: 1 / -1; }
+
+.aviso-golpe { margin-bottom: 12px; }
+
+button.link-denunciar {
+  display: inline;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  background: none;
+  color: var(--suave);
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: underline;
+}
+.form-denuncia-vaga { border-top: 1px solid var(--borda); margin-top: 8px; }
+
+.acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.acoes button { flex: 1 1 120px; margin: 0; padding: 10px; }
 
 #mapa { height: 280px; border-radius: var(--raio); border: 1px solid var(--borda); }
 
