@@ -108,6 +108,12 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 - `UPLOAD_DIR` — pasta das fotos (padrão `src/database/uploads`, fora da pasta pública).
 - `DATABASE_URL` — banco (padrão SQLite em `src/database/app.db`).
 - `MAPA_USER_AGENT` / `MAPA_TILE_URL` — identificação e origem das imagens do mapa.
+- `CONFIAR_PROXY` — como ler o IP real do visitante para o limite de tentativas (`cloudflare` ou `1`).
+- `MERCADOPAGO_ACCESS_TOKEN`, `PIX_EMAIL_PAGADOR`, `URL_PUBLICA`, `PRECO_DESTAQUE_7_DIAS`,
+  `PRECO_DESTAQUE_30_DIAS` — destaque pago por PIX.
+- `DESATIVAR_LIMITES=1` — desliga o limite de tentativas (só para testes).
+
+Lista completa com explicações em `.env.example`. Como publicar: `docs/PUBLICAR.md`.
 
 ## Pontos jurídicos para validar com advogado (antes de lançar)
 
@@ -122,8 +128,7 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 
 ## Pendências técnicas
 
-- Limite de requisições (anti-spam e anti-força-bruta em `/acompanhar`).
 - Criptografia dos campos sensíveis no banco.
-- Pagamento do destaque de vagas (gateway) — hoje o destaque é ativado manualmente pela equipe.
+- Testar o PIX com uma conta real do Mercado Pago (credenciais de teste) — até aqui só foi testado simulado.
 - Registros de acesso (IP): guardar só o que o art. 15 exigir, separados do banco de denúncias,
   com acesso restrito e apagados após o prazo — nunca gravar o protocolo junto do IP.

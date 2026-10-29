@@ -23,14 +23,26 @@ app.register_blueprint(mapa_bp, url_prefix='/api')
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
 
 # Configuração do banco de dados
-os.makedirs(os.path.join(BASE_DIR, 'database'), exist_ok=True)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL', f"sqlite:///{os.path.join(BASE_DIR, 'database', 'app.db')}"
-)
+if os.environ.get('DATABASE_URL'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+else:
+    os.makedirs(os.path.join(BASE_DIR, 'database'), exist_ok=True)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(BASE_DIR, 'database', 'app.db')}"
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 with app.app_context():
     db.create_all()
+
+if not os.environ.get('ANALISTA_TOKEN'):
+    app.logger.warning('ANALISTA_TOKEN não definido: o painel da equipe fica bloqueado.')
+
+
+@app.route('/api/saude')
+def saude():
+    """Usado pela hospedagem para saber se o site está no ar."""
+    return jsonify(ok=True)
+
 
 # Cabeçalhos de privacidade: nada de recursos de terceiros, sem referer, sem cache das respostas da API
 @app.after_request

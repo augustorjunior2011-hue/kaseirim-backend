@@ -19,13 +19,17 @@ _ultima_limpeza = time.monotonic()
 
 
 def _ip_do_visitante():
-    # Atrás do Cloudflare / proxy, o IP real vem nos cabeçalhos (só se CONFIAR_PROXY=1)
-    if os.environ.get('CONFIAR_PROXY') == '1':
-        ip = request.headers.get('CF-Connecting-IP') or \
-            (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
-        if ip:
-            return ip
-    return request.remote_addr or 'desconhecido'
+    # Atrás de proxy, o IP real vem num cabeçalho. Só confie nele se o proxy de fato existir,
+    # senão qualquer um forja o cabeçalho e escapa do limite:
+    #   CONFIAR_PROXY=cloudflare -> CF-Connecting-IP (site atrás do Cloudflare)
+    #   CONFIAR_PROXY=1          -> primeiro IP do X-Forwarded-For (Caddy, Railway...)
+    modo = os.environ.get('CONFIAR_PROXY')
+    ip = None
+    if modo == 'cloudflare':
+        ip = request.headers.get('CF-Connecting-IP')
+    elif modo == '1':
+        ip = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    return ip or request.remote_addr or 'desconhecido'
 
 
 def _chave(nome):
