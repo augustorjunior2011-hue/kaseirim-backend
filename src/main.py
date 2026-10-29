@@ -10,8 +10,11 @@ from src.routes.user import user_bp
 from src.routes.loyalty import loyalty_bp
 from src.routes.denuncia import denuncia_bp
 from src.routes.emprego import emprego_bp
+from src.routes.mapa import mapa_bp
 
-app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
+# FRONTEND=site serve o site de vagas/denúncias (src/site); padrão é o frontend do Kaseirim (src/static)
+FRONTEND = os.environ.get('FRONTEND', 'static')
+app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'site' if FRONTEND == 'site' else 'static'))
 app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
 
 # Habilita CORS para todas as rotas com configurações específicas
@@ -22,6 +25,7 @@ app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(loyalty_bp, url_prefix='/api')
 app.register_blueprint(denuncia_bp, url_prefix='/api')
 app.register_blueprint(emprego_bp, url_prefix='/api')
+app.register_blueprint(mapa_bp, url_prefix='/api')
 
 # Limite de upload (fotos das denúncias)
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
@@ -34,6 +38,21 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 with app.app_context():
     db.create_all()
+
+# Cabeçalhos de privacidade do site: nada de recursos de terceiros, sem referer, sem cache das respostas da API
+@app.after_request
+def cabecalhos_privacidade(resp):
+    if FRONTEND == 'site':
+        resp.headers['Content-Security-Policy'] = (
+            "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        )
+        resp.headers['Referrer-Policy'] = 'no-referrer'
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
+        resp.headers['Permissions-Policy'] = 'camera=(self), geolocation=(self), microphone=()'
+        if request.path.startswith('/api/') and not request.path.startswith('/api/mapa/'):
+            resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 # Rota para servir o frontend React
 @app.route('/', defaults={'path': ''})

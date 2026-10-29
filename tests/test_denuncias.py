@@ -127,5 +127,12 @@ class EmpregoTest(unittest.TestCase):
         self.assertNotIn(vaga['id'], ids)
 
 
+class MapaTest(unittest.TestCase):
+    def test_coordenadas_invalidas(self):
+        client = app.test_client()
+        self.assertEqual(client.get('/api/mapa/20/0/0.png').status_code, 404)
+        self.assertEqual(client.get('/api/mapa/2/4/0.png').status_code, 404)
+
+
 if __name__ == '__main__':
     unittest.main()

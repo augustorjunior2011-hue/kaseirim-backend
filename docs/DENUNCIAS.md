@@ -3,6 +3,25 @@
 Módulo de backend para o app de denúncias anônimas (sem cadastro) com aba de empregos
 como fonte de receita para um fundo de recompensas.
 
+## Site para celular (`src/site`)
+
+Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask quando `FRONTEND=site`.
+Sem essa variável, o servidor continua servindo o frontend do Kaseirim, então o ideal é publicar
+o site em um **deploy e domínio separados**.
+
+- **Página inicial = vagas de emprego.** A denúncia fica no link discreto "Canal seguro", no rodapé.
+  O nome "Vagas Perto" é provisório: troque em `src/site/index.html`.
+- **Botão "Sair rápido"** nas telas do canal: troca a página por uma busca da previsão do tempo.
+- **Uma única entrada no histórico:** a navegação usa `location.replace`, então o botão "voltar"
+  não mostra as telas da denúncia.
+- **Nada salvo no aparelho:** sem cookies, sem localStorage, sem analytics.
+- **Fotos reduzidas e limpas no próprio celular** antes do envio (e limpas de novo no servidor).
+- **Mapa via servidor (`/api/mapa/...`):** o visitante não se conecta ao OpenStreetMap, que veria o
+  IP junto com a região denunciada. Configure `MAPA_USER_AGENT` com um contato real (exigência do
+  OpenStreetMap). Com muito tráfego, contrate um provedor de mapas (`MAPA_TILE_URL`).
+- **Cabeçalhos de segurança:** CSP bloqueando qualquer recurso de terceiros, `no-referrer`,
+  respostas da API com `no-store`.
+
 ## Como funciona o anonimato
 
 - **Sem cadastro.** Ao enviar a denúncia, o app recebe um **protocolo** (`DN-XXXX-XXXX-XXXX`)
@@ -71,6 +90,8 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 - `ANALISTA_TOKEN` — obrigatório para as rotas `/api/analise/*` (sem ele, todas retornam 401).
 - `UPLOAD_DIR` — pasta das fotos (padrão `src/database/uploads`, fora da pasta pública).
 - `DATABASE_URL` — banco (padrão SQLite em `src/database/app.db`).
+- `FRONTEND=site` — serve o site de vagas/denúncias em vez do frontend do Kaseirim.
+- `MAPA_USER_AGENT` / `MAPA_TILE_URL` — identificação e origem das imagens do mapa.
 
 ## Pontos jurídicos para validar com advogado (antes de lançar)
 
