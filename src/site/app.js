@@ -238,8 +238,7 @@ function telaCanal() {
     </div>
     <a class="botao" href="#/denunciar">Fazer uma denúncia</a>
     <a class="botao secundario" href="#/acompanhar">Acompanhar denúncia</a>
-    <p class="suave" style="margin-top:16px">Denúncias de crimes graves que levarem a um resultado confirmado
-      podem receber recompensa, também sem identificação. Denúncia falsa é crime (art. 339 do Código Penal).</p>`;
+    <p class="suave" style="margin-top:16px">Denúncia falsa é crime (art. 339 do Código Penal).</p>`;
 }
 
 async function telaDenunciar() {
@@ -247,7 +246,6 @@ async function telaDenunciar() {
     <h1>Fazer denúncia</h1>
     <form id="form-denuncia">
       <label>Tipo de crime <select name="categoria" required><option value="">Carregando...</option></select></label>
-      <p id="aviso-recompensa" class="suave"></p>
 
       <label>O que aconteceu? <textarea name="descricao" required minlength="20" maxlength="5000"
         placeholder="Descreva com o máximo de detalhes: o que, como, quem mais estava envolvido..."></textarea></label>
@@ -286,19 +284,13 @@ async function telaDenunciar() {
 
   const form = document.getElementById('form-denuncia');
   const select = form.categoria;
-  let categorias = [];
   try {
-    categorias = await api('/denuncias/categorias');
+    const categorias = await api('/denuncias/categorias');
     select.innerHTML = '<option value="">Selecione</option>' +
       categorias.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
   } catch (err) {
     mostrarErro(form, err.message);
   }
-  select.addEventListener('change', () => {
-    const c = categorias.find(x => x.id === select.value);
-    document.getElementById('aviso-recompensa').textContent =
-      c && c.pode_gerar_recompensa ? 'Este tipo de crime pode gerar recompensa.' : '';
-  });
 
   form.querySelectorAll('input[name="faccionado"]').forEach(r => r.addEventListener('change', () => {
     document.getElementById('campo-faccao').hidden = form.faccionado.value !== 'sim';
@@ -359,7 +351,7 @@ function telaProtocolo(r) {
   tela.innerHTML = `
     <h1>Denúncia enviada</h1>
     <div class="aviso"><strong>Anote agora, num papel.</strong> Sem estes dois códigos não é possível acompanhar
-      a denúncia nem receber recompensa. Não guardamos uma cópia e não conseguimos recuperar.</div>
+      a denúncia nem conversar com a equipe. Não guardamos uma cópia e não conseguimos recuperar.</div>
     <h2>Protocolo</h2>
     <div class="credenciais">${esc(r.protocolo)}</div>
     <h2>Chave secreta</h2>
@@ -396,41 +388,6 @@ function telaAcompanhar() {
   });
 }
 
-function blocoRecompensa(rec) {
-  switch (rec.status) {
-    case 'elegivel':
-      return `
-        <div class="cartao destaque">
-          <h3>Recompensa disponível: R$ ${Number(rec.valor).toFixed(2).replace('.', ',')}</h3>
-          <form id="form-resgate">
-            <label>Como quer receber?</label>
-            <div class="opcoes">
-              <label><input type="radio" name="metodo" value="vale_presente" checked> Vale-presente</label>
-              <label><input type="radio" name="metodo" value="recarga_celular"> Recarga</label>
-              <label><input type="radio" name="metodo" value="pix"> PIX</label>
-            </div>
-            <p id="explica-metodo" class="suave"></p>
-            <label id="campo-destino" hidden><span></span> <input name="destino" autocomplete="off"></label>
-            <button type="submit">Resgatar</button>
-          </form>
-        </div>`;
-    case 'resgate_solicitado':
-      return `<div class="cartao"><h3>Resgate solicitado</h3>
-        <p class="suave">Estamos processando o pagamento. Volte em alguns dias.</p></div>`;
-    case 'paga':
-      return `<div class="cartao"><h3>Recompensa paga</h3>
-        ${rec.codigo ? `<p>Código do vale:</p><div class="credenciais">${esc(rec.codigo)}</div>` : ''}</div>`;
-    default:
-      return '';
-  }
-}
-
-const EXPLICA_METODO = {
-  vale_presente: ['Mais anônimo: o código do vale aparece aqui nesta tela. Você não informa nada.', null],
-  recarga_celular: ['O crédito vai para um número de celular. Prefira um chip pré-pago.', 'Celular com DDD'],
-  pix: ['Atenção: no PIX o banco mostra o seu nome para quem paga. Apagamos a chave depois do pagamento.', 'Chave PIX'],
-};
-
 function mostrarAndamento(d, credenciais) {
   const area = document.getElementById('andamento');
   area.innerHTML = `
@@ -439,7 +396,6 @@ function mostrarAndamento(d, credenciais) {
       <h3>${esc(STATUS[d.status] || d.status)}</h3>
       <p class="suave">Protocolo ${esc(d.protocolo)} · enviada em ${esc(d.criada_em)}</p>
     </div>
-    ${blocoRecompensa(d.recompensa)}
     <h2>Conversa com a equipe</h2>
     ${d.mensagens.length ? d.mensagens.map(m => `
       <div class="mensagem ${m.autor === 'equipe' ? 'equipe' : 'cidadao'}">
@@ -464,32 +420,6 @@ function mostrarAndamento(d, credenciais) {
     });
   });
 
-  const formResgate = document.getElementById('form-resgate');
-  if (!formResgate) return;
-  const atualizarMetodo = () => {
-    const [explicacao, rotulo] = EXPLICA_METODO[formResgate.metodo.value];
-    document.getElementById('explica-metodo').textContent = explicacao;
-    const campo = document.getElementById('campo-destino');
-    campo.hidden = !rotulo;
-    campo.querySelector('span').textContent = rotulo || '';
-    campo.querySelector('input').required = Boolean(rotulo);
-  };
-  formResgate.querySelectorAll('input[name="metodo"]').forEach(r => r.addEventListener('change', atualizarMetodo));
-  atualizarMetodo();
-
-  formResgate.addEventListener('submit', e => {
-    e.preventDefault();
-    enviando(formResgate.querySelector('button'), async () => {
-      try {
-        const novo = await api('/denuncias/recompensa/resgatar', {
-          method: 'POST', json: { ...credenciais, ...formDados(formResgate) },
-        });
-        mostrarAndamento(novo, credenciais);
-      } catch (err) {
-        mostrarErro(formResgate, err.message);
-      }
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------

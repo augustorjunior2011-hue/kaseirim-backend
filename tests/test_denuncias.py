@@ -43,7 +43,7 @@ class DenunciaTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 201, resp.get_json())
         return resp.get_json()
 
-    def test_fluxo_completo_com_recompensa(self):
+    def test_fluxo_completo(self):
         criada = self.criar()
         cred = {'protocolo': criada['protocolo'], 'chave': criada['chave']}
 
@@ -62,29 +62,16 @@ class DenunciaTest(unittest.TestCase):
         foto = self.client.get(f"/api/analise/fotos/{denuncia['fotos'][0]}", headers=ANALISTA)
         self.assertEqual(Image.open(io.BytesIO(foto.data)).getexif(), {})
 
-        # Não pode liberar recompensa antes da confirmação
-        r = self.client.post(f'/api/analise/denuncias/{did}/recompensa', json={'valor': 500}, headers=ANALISTA)
-        self.assertEqual(r.status_code, 400)
-
-        self.client.put(f'/api/analise/denuncias/{did}', json={'status': 'resultado_confirmado'}, headers=ANALISTA)
-        r = self.client.post(f'/api/analise/denuncias/{did}/recompensa', json={'valor': 500}, headers=ANALISTA)
+        r = self.client.put(f'/api/analise/denuncias/{did}', json={'status': 'em_analise'}, headers=ANALISTA)
         self.assertEqual(r.status_code, 200)
+        self.client.post(f'/api/analise/denuncias/{did}/mensagens', json={'texto': 'Que horas ele chega?'},
+                         headers=ANALISTA)
+        r = self.client.post('/api/denuncias/mensagens', json={**cred, 'texto': 'Por volta das 22h'})
+        acomp = r.get_json()
+        self.assertEqual(acomp['status'], 'em_analise')
+        self.assertEqual([m['autor'] for m in acomp['mensagens']], ['equipe', 'cidadao'])
+        self.assertNotIn('recompensa', acomp)
 
-        r = self.client.post('/api/denuncias/recompensa/resgatar', json={**cred, 'metodo': 'pix', 'destino': 'chave@pix'})
-        self.assertEqual(r.get_json()['recompensa']['status'], 'resgate_solicitado')
-
-        r = self.client.post(f'/api/analise/denuncias/{did}/recompensa/pagar', json={}, headers=ANALISTA)
-        self.assertEqual(r.get_json()['recompensa']['status'], 'paga')
-        self.assertIsNone(r.get_json()['recompensa']['destino'])
-
-    def test_crime_nao_grave_nao_gera_recompensa(self):
-        criada = self.criar(categoria='furto')
-        self.assertFalse(criada['pode_gerar_recompensa'])
-        lista = self.client.get('/api/analise/denuncias?categoria=furto', headers=ANALISTA).get_json()
-        did = lista['denuncias'][0]['id']
-        self.client.put(f'/api/analise/denuncias/{did}', json={'status': 'resultado_confirmado'}, headers=ANALISTA)
-        r = self.client.post(f'/api/analise/denuncias/{did}/recompensa', json={'valor': 100}, headers=ANALISTA)
-        self.assertEqual(r.status_code, 400)
 
     def test_validacoes(self):
         r = self.client.post('/api/denuncias', json={'categoria': 'xx', 'descricao': 'a' * 30})

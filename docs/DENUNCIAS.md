@@ -1,7 +1,7 @@
 # Denúncias anônimas + Empregos
 
-Módulo de backend para o app de denúncias anônimas (sem cadastro) com aba de empregos
-como fonte de receita para um fundo de recompensas.
+Site e API de denúncias anônimas (sem cadastro) com aba de empregos, que é a fonte de receita
+do projeto.
 
 ## Site para celular (`src/site`)
 
@@ -24,30 +24,28 @@ Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask na raiz do dom
 
 - **Sem cadastro.** Ao enviar a denúncia, o app recebe um **protocolo** (`DN-XXXX-XXXX-XXXX`)
   e uma **chave secreta** (`CH-XXXX-XXXX-XXXX-XXXX`). O servidor guarda só o *hash* da chave.
-  Quem tem protocolo + chave acompanha a denúncia, conversa com a equipe e resgata a recompensa.
+  Quem tem protocolo + chave acompanha a denúncia e conversa com a equipe.
   Se perder, não há como recuperar (é proposital).
 - **Fotos sem metadados.** Toda foto é regravada pixel a pixel; o EXIF (GPS, modelo do celular,
   data/hora) é descartado. As fotos ficam fora da pasta pública (`UPLOAD_DIR`).
 - **Datas sem horário.** Denúncias e mensagens registram apenas o dia.
 - **Localização** é o ponto que o cidadão marca no mapa, não o GPS do aparelho.
-- **Destino do pagamento apagado** (chave PIX / celular) assim que o pagamento é registrado.
 
-## Como pagar quem não se identifica
+## Recompensas (suspenso)
 
-O protocolo + chave funcionam como um "bilhete ao portador": quem prova que tem a chave recebe,
-sem dizer quem é. O cidadão só escolhe **como** receber quando a recompensa for liberada:
+A parte de recompensas foi retirada por enquanto. Ela existiu no commit `e275b1f` e pode ser
+recuperada do histórico do Git se o projeto voltar a ela. A ideia era: o protocolo + chave
+funcionam como um "bilhete ao portador", e o cidadão escolhe receber por vale-presente,
+recarga de celular ou PIX, só para crimes graves com resultado confirmado.
 
-| Método | Anonimato | Observação |
-|---|---|---|
-| `vale_presente` | Alto | Equipe compra um vale (supermercado, loja de app, etc.) e o código aparece no acompanhamento. Nenhum dado pessoal. Bom para valores menores. |
-| `recarga_celular` | Médio | Crédito num número pré-pago informado na hora. |
-| `pix` | Baixo | O banco mostra o nome do recebedor para quem paga. O sistema apaga a chave depois, mas a transação existe no extrato. |
-
-Outras opções a estudar com o banco/parceiro: saque por código em rede de caixas eletrônicos ou
-ordem de pagamento retirada em correspondente bancário. Cripto não é recomendado (lavagem de dinheiro / reputação).
-
-**Regras implementadas:** recompensa só para categorias graves (`CATEGORIAS` em
-`src/models/denuncia.py`) e só depois que a equipe marca a denúncia como `resultado_confirmado`.
+Antes de voltar com ela, validar com advogado:
+- **Recompensa paga por particular:** a Lei 13.608/2018 trata de recompensas oferecidas pelo poder
+  público; uma entidade privada se apoia na *promessa de recompensa* (Código Civil, arts. 854–860).
+  O Disque Denúncia do RJ (mantido por uma ONG) é um modelo privado parecido.
+- **Confirmar a prisão sem vínculo com a polícia:** sem parceria, só há fontes públicas
+  (notícias, consulta processual).
+- **Lavagem de dinheiro / tributação:** pagamentos a pessoas não identificadas precisam de política
+  de limites e contabilidade do fundo.
 
 ## Fluxo da denúncia
 
@@ -61,11 +59,10 @@ Públicos (cidadão):
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/denuncias/categorias` | Lista categorias e quais podem gerar recompensa |
+| GET | `/api/denuncias/categorias` | Lista as categorias de crime |
 | POST | `/api/denuncias` | Cria denúncia (JSON ou multipart com até 5 `fotos`) → protocolo + chave |
-| POST | `/api/denuncias/acompanhar` | `{protocolo, chave}` → status, mensagens, recompensa |
+| POST | `/api/denuncias/acompanhar` | `{protocolo, chave}` → status e mensagens |
 | POST | `/api/denuncias/mensagens` | `{protocolo, chave, texto}` → complementa a denúncia |
-| POST | `/api/denuncias/recompensa/resgatar` | `{protocolo, chave, metodo, destino?}` |
 | GET | `/api/empregos` | Lista vagas (`tipo`, `uf`, `cidade`, `busca`); destaques primeiro |
 | POST | `/api/empregos` | Publica oferta/procura → `codigo_gestao` |
 | PUT/DELETE | `/api/empregos/<id>` | Edita/remove com `codigo_gestao` |
@@ -78,8 +75,6 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 | GET/PUT | `/api/analise/denuncias/<id>` | Detalhe / muda status e parecer |
 | GET | `/api/analise/fotos/<id>` | Foto (já sem metadados) |
 | POST | `/api/analise/denuncias/<id>/mensagens` | Mensagem para o denunciante |
-| POST | `/api/analise/denuncias/<id>/recompensa` | `{valor}` libera recompensa |
-| POST | `/api/analise/denuncias/<id>/recompensa/pagar` | `{codigo?}` registra pagamento e apaga destino |
 | POST | `/api/analise/empregos/<id>/destaque` | `{dias}` ativa destaque pago |
 | DELETE | `/api/analise/empregos/<id>` | Remove anúncio abusivo/golpe |
 
@@ -96,18 +91,10 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
   gera receita) é obrigado a guardar registros de acesso (IP, data/hora) por 6 meses. Isso conflita
   com "anonimato total" e precisa ser desenhado com cuidado (ex.: orientar uso de VPN/Tor, separar
   infraestrutura).
-- **Recompensa paga por particular:** a Lei 13.608/2018 trata de recompensas oferecidas pelo poder
-  público; uma entidade privada se apoia na *promessa de recompensa* (Código Civil, arts. 854–860).
-  O Disque Denúncia do RJ (mantido por uma ONG) é um modelo privado parecido.
-- **Confirmar a prisão sem vínculo com a polícia:** sem parceria, a equipe só tem fontes públicas
-  (notícias, consulta processual). Considere pagar só com prisão + denúncia do Ministério Público,
-  ou condenação, para reduzir denúncias falsas.
 - **Denúncia falsa:** denunciação caluniosa (CP art. 339) e calúnia (art. 138). Deixar isso claro
   no app e nunca publicar nomes de suspeitos.
 - **LGPD:** o sistema guarda dados de terceiros (nome/apelido de suspeitos). Definir base legal,
   prazo de retenção e segurança (criptografia em repouso, acesso restrito).
-- **Lavagem de dinheiro / tributação:** pagamentos a pessoas não identificadas, sobretudo valores
-  altos, precisam de política de limites e contabilidade do fundo.
 
 ## Pendências técnicas
 

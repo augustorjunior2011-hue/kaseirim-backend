@@ -1,5 +1,4 @@
 import os
-import re
 import secrets
 
 from flask import Blueprint, request, jsonify, send_file, abort
@@ -7,7 +6,7 @@ from flask import Blueprint, request, jsonify, send_file, abort
 from src.models.db import db
 from src.models.denuncia import (
     Denuncia, FotoDenuncia, MensagemDenuncia,
-    CATEGORIAS, FACCIONADO, STATUS, METODOS_RESGATE,
+    CATEGORIAS, FACCIONADO, STATUS,
 )
 from src.utils.anonimato import (
     gerar_codigo, gerar_chave_secreta, hash_chave, conferir_chave,
@@ -58,7 +57,7 @@ def _autenticar(dados):
 @denuncia_bp.route('/denuncias/categorias', methods=['GET'])
 def listar_categorias():
     return jsonify([
-        {'id': chave, 'nome': info['nome'], 'pode_gerar_recompensa': info['grave']}
+        {'id': chave, 'nome': info['nome']}
         for chave, info in CATEGORIAS.items()
     ])
 
@@ -133,10 +132,9 @@ def criar_denuncia():
 
     return jsonify({
         'message': 'Denúncia recebida. Guarde o protocolo e a chave: eles são a única forma de '
-                   'acompanhar a denúncia e resgatar uma eventual recompensa. Não conseguimos recuperá-los.',
+                   'acompanhar a denúncia e conversar com a equipe. Não conseguimos recuperá-los.',
         'protocolo': protocolo,
         'chave': chave,
-        'pode_gerar_recompensa': denuncia.grave,
     }), 201
 
 
@@ -162,44 +160,6 @@ def enviar_mensagem_cidadao():
     db.session.add(MensagemDenuncia(denuncia_id=denuncia.id, autor='cidadao', texto=texto))
     db.session.commit()
     return jsonify(denuncia.to_public_dict()), 201
-
-
-@denuncia_bp.route('/denuncias/recompensa/resgatar', methods=['POST'])
-def resgatar_recompensa():
-    """O cidadão escolhe como receber, sem se identificar.
-
-    - vale_presente: a equipe compra um vale e o código aparece no acompanhamento (mais anônimo).
-    - recarga_celular: crédito em um número pré-pago informado agora.
-    - pix: chave PIX informada agora; apagada do sistema assim que o pagamento é feito.
-    """
-    dados = request.get_json(silent=True) or {}
-    denuncia = _autenticar(dados)
-    if not denuncia:
-        return jsonify({'error': 'Protocolo ou chave inválidos'}), 404
-
-    if denuncia.recompensa_status != 'elegivel':
-        return jsonify({'error': 'Esta denúncia não possui recompensa disponível para resgate',
-                        'recompensa_status': denuncia.recompensa_status}), 400
-
-    metodo = dados.get('metodo')
-    if metodo not in METODOS_RESGATE:
-        return jsonify({'error': f"Método deve ser um de: {', '.join(METODOS_RESGATE)}"}), 400
-
-    destino = _texto(dados, 'destino', 150)
-    if metodo == 'recarga_celular':
-        destino = re.sub(r'\D', '', destino or '')
-        if len(destino) not in (10, 11):
-            return jsonify({'error': 'Informe o celular com DDD'}), 400
-    elif metodo == 'pix' and not destino:
-        return jsonify({'error': 'Informe a chave PIX'}), 400
-    elif metodo == 'vale_presente':
-        destino = None
-
-    denuncia.resgate_metodo = metodo
-    denuncia.resgate_destino = destino
-    denuncia.recompensa_status = 'resgate_solicitado'
-    db.session.commit()
-    return jsonify(denuncia.to_public_dict())
 
 
 # ---------------------------------------------------------------------------
@@ -272,47 +232,3 @@ def analise_mensagem(denuncia_id):
     db.session.commit()
     return jsonify(denuncia.to_dict()), 201
 
-
-@denuncia_bp.route('/analise/denuncias/<int:denuncia_id>/recompensa', methods=['POST'])
-@exige_analista
-def analise_liberar_recompensa(denuncia_id):
-    """Libera recompensa: só para crime grave com resultado confirmado."""
-    denuncia = db.get_or_404(Denuncia, denuncia_id)
-    if not denuncia.grave:
-        return jsonify({'error': 'Recompensa disponível apenas para crimes graves'}), 400
-    if denuncia.status != 'resultado_confirmado':
-        return jsonify({'error': "A denúncia precisa estar com status 'resultado_confirmado'"}), 400
-    if denuncia.recompensa_status in ('resgate_solicitado', 'paga'):
-        return jsonify({'error': 'Recompensa já em resgate ou paga'}), 400
-
-    valor = _float((request.get_json(silent=True) or {}).get('valor'), 0.01, 1_000_000)
-    if valor is None:
-        return jsonify({'error': 'Valor inválido'}), 400
-
-    denuncia.recompensa_valor = valor
-    denuncia.recompensa_status = 'elegivel'
-    db.session.add(MensagemDenuncia(
-        denuncia_id=denuncia.id, autor='equipe',
-        texto='Sua denúncia ajudou a gerar um resultado. Há uma recompensa disponível para resgate.',
-    ))
-    db.session.commit()
-    return jsonify(denuncia.to_dict())
-
-
-@denuncia_bp.route('/analise/denuncias/<int:denuncia_id>/recompensa/pagar', methods=['POST'])
-@exige_analista
-def analise_registrar_pagamento(denuncia_id):
-    """Registra o pagamento e apaga o destino (chave PIX / celular) do banco."""
-    denuncia = db.get_or_404(Denuncia, denuncia_id)
-    if denuncia.recompensa_status != 'resgate_solicitado':
-        return jsonify({'error': 'Não há resgate pendente'}), 400
-
-    codigo = _texto(request.get_json(silent=True) or {}, 'codigo', 200)
-    if denuncia.resgate_metodo == 'vale_presente' and not codigo:
-        return jsonify({'error': 'Informe o código do vale-presente para o cidadão'}), 400
-
-    denuncia.resgate_codigo = codigo
-    denuncia.resgate_destino = None
-    denuncia.recompensa_status = 'paga'
-    db.session.commit()
-    return jsonify(denuncia.to_dict())
