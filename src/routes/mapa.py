@@ -10,7 +10,7 @@ mapa_bp = Blueprint('mapa', __name__)
 # As imagens do mapa passam pelo servidor: o visitante não se conecta ao servidor de mapas,
 # que veria o IP dele junto com a região que está sendo denunciada.
 TILE_URL = os.environ.get('MAPA_TILE_URL', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png')
-USER_AGENT = os.environ.get('MAPA_USER_AGENT', 'VagasPerto/1.0 (contato@exemplo.com.br)')
+USER_AGENT = os.environ.get('MAPA_USER_AGENT', 'Vagai/1.0 (contato@vagai.com.br)')
 CACHE_MAX = 2000
 
 _cache = OrderedDict()

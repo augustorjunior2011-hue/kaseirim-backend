@@ -8,7 +8,7 @@ do projeto.
 Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask na raiz do domínio.
 
 - **Página inicial = vagas de emprego.** A denúncia fica no link discreto "Canal seguro", no rodapé.
-  O nome "Vagas Perto" é provisório: troque em `src/site/index.html`.
+  O nome do site é **Vagaí** (`src/site/index.html`).
 - **Botão "Sair rápido"** nas telas do canal: troca a página por uma busca da previsão do tempo.
 - **Uma única entrada no histórico:** a navegação usa `location.replace`, então o botão "voltar"
   não mostra as telas da denúncia.
