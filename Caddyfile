@@ -1,0 +1,6 @@
+# HTTPS automático para o domínio definido em DOMINIO (.env).
+# Sem log de acesso: o Caddy não grava o IP de quem visita.
+{$DOMINIO} {
+	encode gzip
+	reverse_proxy site:8000
+}

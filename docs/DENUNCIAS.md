@@ -1,7 +1,7 @@
 # Denúncias anônimas + Empregos
 
-Módulo de backend para o app de denúncias anônimas (sem cadastro) com aba de empregos
-como fonte de receita para um fundo de recompensas.
+Site e API de denúncias anônimas (sem cadastro) com aba de empregos, que é a fonte de receita
+do projeto.
 
 ## Site para celular (`src/site`)
 
@@ -24,30 +24,42 @@ Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask na raiz do dom
 
 - **Sem cadastro.** Ao enviar a denúncia, o app recebe um **protocolo** (`DN-XXXX-XXXX-XXXX`)
   e uma **chave secreta** (`CH-XXXX-XXXX-XXXX-XXXX`). O servidor guarda só o *hash* da chave.
-  Quem tem protocolo + chave acompanha a denúncia, conversa com a equipe e resgata a recompensa.
+  Quem tem protocolo + chave acompanha a denúncia e conversa com a equipe.
   Se perder, não há como recuperar (é proposital).
 - **Fotos sem metadados.** Toda foto é regravada pixel a pixel; o EXIF (GPS, modelo do celular,
   data/hora) é descartado. As fotos ficam fora da pasta pública (`UPLOAD_DIR`).
 - **Datas sem horário.** Denúncias e mensagens registram apenas o dia.
 - **Localização** é o ponto que o cidadão marca no mapa, não o GPS do aparelho.
-- **Destino do pagamento apagado** (chave PIX / celular) assim que o pagamento é registrado.
 
-## Como pagar quem não se identifica
+## Vagas de emprego
 
-O protocolo + chave funcionam como um "bilhete ao portador": quem prova que tem a chave recebe,
-sem dizer quem é. O cidadão só escolhe **como** receber quando a recompensa for liberada:
+- **Quem procura trabalho** publica na hora. **Vagas de empresas** só vão para o ar depois que a
+  equipe aprova, no painel `/#/equipe` (não há link para ele no site; pede o `ANALISTA_TOKEN`).
+- **Palavras suspeitas** (taxa, pix antecipado, investimento...) mandam qualquer anúncio para a fila
+  de aprovação. Lista em `PALAVRAS_SUSPEITAS` (`src/models/emprego.py`).
+- **Denunciar anúncio:** qualquer pessoa marca um anúncio como golpe. Com 3 denúncias ele sai do ar e
+  volta para a fila. Se a equipe aprovar de novo, o contador zera.
+- **Limite de 3 anúncios ativos por telefone.**
+- **Anúncio editado** volta para a fila (evita trocar o texto depois de aprovado).
+- **Filtro por cidade:** os nomes são padronizados ("rio DE janeiro" vira "Rio de Janeiro") e o
+  filtro mostra só cidades que têm anúncios no ar.
+- Validade de 30 dias, contados a partir da aprovação.
 
-| Método | Anonimato | Observação |
-|---|---|---|
-| `vale_presente` | Alto | Equipe compra um vale (supermercado, loja de app, etc.) e o código aparece no acompanhamento. Nenhum dado pessoal. Bom para valores menores. |
-| `recarga_celular` | Médio | Crédito num número pré-pago informado na hora. |
-| `pix` | Baixo | O banco mostra o nome do recebedor para quem paga. O sistema apaga a chave depois, mas a transação existe no extrato. |
+## Recompensas (suspenso)
 
-Outras opções a estudar com o banco/parceiro: saque por código em rede de caixas eletrônicos ou
-ordem de pagamento retirada em correspondente bancário. Cripto não é recomendado (lavagem de dinheiro / reputação).
+A parte de recompensas foi retirada por enquanto. Ela existiu no commit `e275b1f` e pode ser
+recuperada do histórico do Git se o projeto voltar a ela. A ideia era: o protocolo + chave
+funcionam como um "bilhete ao portador", e o cidadão escolhe receber por vale-presente,
+recarga de celular ou PIX, só para crimes graves com resultado confirmado.
 
-**Regras implementadas:** recompensa só para categorias graves (`CATEGORIAS` em
-`src/models/denuncia.py`) e só depois que a equipe marca a denúncia como `resultado_confirmado`.
+Antes de voltar com ela, validar com advogado:
+- **Recompensa paga por particular:** a Lei 13.608/2018 trata de recompensas oferecidas pelo poder
+  público; uma entidade privada se apoia na *promessa de recompensa* (Código Civil, arts. 854–860).
+  O Disque Denúncia do RJ (mantido por uma ONG) é um modelo privado parecido.
+- **Confirmar a prisão sem vínculo com a polícia:** sem parceria, só há fontes públicas
+  (notícias, consulta processual).
+- **Lavagem de dinheiro / tributação:** pagamentos a pessoas não identificadas precisam de política
+  de limites e contabilidade do fundo.
 
 ## Fluxo da denúncia
 
@@ -55,31 +67,38 @@ ordem de pagamento retirada em correspondente bancário. Cripto não é recomend
 
 A equipe pode pedir detalhes ao denunciante pelo chat anônimo (`/mensagens`).
 
+**Painel da equipe** (`/#/equipe/denuncias`, pede o `ANALISTA_TOKEN`): lista com filtros por status,
+tipo de crime e "só crimes graves"; ao abrir uma denúncia, mostra descrição, ponto no mapa, dados do
+suspeito e fotos, e permite mudar o status, escrever um parecer interno (o denunciante não vê) e
+conversar com o denunciante.
+
 ## Endpoints
 
 Públicos (cidadão):
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/denuncias/categorias` | Lista categorias e quais podem gerar recompensa |
+| GET | `/api/denuncias/categorias` | Lista as categorias de crime |
 | POST | `/api/denuncias` | Cria denúncia (JSON ou multipart com até 5 `fotos`) → protocolo + chave |
-| POST | `/api/denuncias/acompanhar` | `{protocolo, chave}` → status, mensagens, recompensa |
+| POST | `/api/denuncias/acompanhar` | `{protocolo, chave}` → status e mensagens |
 | POST | `/api/denuncias/mensagens` | `{protocolo, chave, texto}` → complementa a denúncia |
-| POST | `/api/denuncias/recompensa/resgatar` | `{protocolo, chave, metodo, destino?}` |
-| GET | `/api/empregos` | Lista vagas (`tipo`, `uf`, `cidade`, `busca`); destaques primeiro |
+| GET | `/api/empregos` | Lista vagas aprovadas (`tipo`, `uf`, `cidade`, `busca`); destaques primeiro |
+| GET | `/api/empregos/cidades` | Cidades com anúncios no ar (`uf` opcional) |
 | POST | `/api/empregos` | Publica oferta/procura → `codigo_gestao` |
 | PUT/DELETE | `/api/empregos/<id>` | Edita/remove com `codigo_gestao` |
+| POST | `/api/empregos/<id>/denunciar` | `{motivo, detalhe?}` marca anúncio como golpe/abusivo |
 
 Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/analise/denuncias` | Lista (`status`, `categoria`, `uf`) |
+| GET | `/api/analise/denuncias` | Lista (`status`, `categoria`, `uf`, `grave=1`) |
 | GET/PUT | `/api/analise/denuncias/<id>` | Detalhe / muda status e parecer |
 | GET | `/api/analise/fotos/<id>` | Foto (já sem metadados) |
 | POST | `/api/analise/denuncias/<id>/mensagens` | Mensagem para o denunciante |
-| POST | `/api/analise/denuncias/<id>/recompensa` | `{valor}` libera recompensa |
-| POST | `/api/analise/denuncias/<id>/recompensa/pagar` | `{codigo?}` registra pagamento e apaga destino |
+| GET | `/api/analise/empregos` | Fila de moderação (`status=pendente|aprovada|rejeitada`) |
+| POST | `/api/analise/empregos/<id>/aprovar` | Coloca o anúncio no ar |
+| POST | `/api/analise/empregos/<id>/rejeitar` | `{motivo?}` tira/recusa o anúncio |
 | POST | `/api/analise/empregos/<id>/destaque` | `{dias}` ativa destaque pago |
 | DELETE | `/api/analise/empregos/<id>` | Remove anúncio abusivo/golpe |
 
@@ -89,6 +108,12 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 - `UPLOAD_DIR` — pasta das fotos (padrão `src/database/uploads`, fora da pasta pública).
 - `DATABASE_URL` — banco (padrão SQLite em `src/database/app.db`).
 - `MAPA_USER_AGENT` / `MAPA_TILE_URL` — identificação e origem das imagens do mapa.
+- `CONFIAR_PROXY` — como ler o IP real do visitante para o limite de tentativas (`cloudflare` ou `1`).
+- `MERCADOPAGO_ACCESS_TOKEN`, `PIX_EMAIL_PAGADOR`, `URL_PUBLICA`, `PRECO_DESTAQUE_7_DIAS`,
+  `PRECO_DESTAQUE_30_DIAS` — destaque pago por PIX.
+- `DESATIVAR_LIMITES=1` — desliga o limite de tentativas (só para testes).
+
+Lista completa com explicações em `.env.example`. Como publicar: `docs/PUBLICAR.md`.
 
 ## Pontos jurídicos para validar com advogado (antes de lançar)
 
@@ -96,23 +121,14 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
   gera receita) é obrigado a guardar registros de acesso (IP, data/hora) por 6 meses. Isso conflita
   com "anonimato total" e precisa ser desenhado com cuidado (ex.: orientar uso de VPN/Tor, separar
   infraestrutura).
-- **Recompensa paga por particular:** a Lei 13.608/2018 trata de recompensas oferecidas pelo poder
-  público; uma entidade privada se apoia na *promessa de recompensa* (Código Civil, arts. 854–860).
-  O Disque Denúncia do RJ (mantido por uma ONG) é um modelo privado parecido.
-- **Confirmar a prisão sem vínculo com a polícia:** sem parceria, a equipe só tem fontes públicas
-  (notícias, consulta processual). Considere pagar só com prisão + denúncia do Ministério Público,
-  ou condenação, para reduzir denúncias falsas.
 - **Denúncia falsa:** denunciação caluniosa (CP art. 339) e calúnia (art. 138). Deixar isso claro
   no app e nunca publicar nomes de suspeitos.
 - **LGPD:** o sistema guarda dados de terceiros (nome/apelido de suspeitos). Definir base legal,
   prazo de retenção e segurança (criptografia em repouso, acesso restrito).
-- **Lavagem de dinheiro / tributação:** pagamentos a pessoas não identificadas, sobretudo valores
-  altos, precisam de política de limites e contabilidade do fundo.
 
 ## Pendências técnicas
 
-- Limite de requisições (anti-spam e anti-força-bruta em `/acompanhar`).
 - Criptografia dos campos sensíveis no banco.
-- Pagamento do destaque de vagas (gateway) — hoje o destaque é ativado manualmente pela equipe.
+- Testar o PIX com uma conta real do Mercado Pago (credenciais de teste) — até aqui só foi testado simulado.
 - Registros de acesso (IP): guardar só o que o art. 15 exigir, separados do banco de denúncias,
   com acesso restrito e apagados após o prazo — nunca gravar o protocolo junto do IP.

@@ -1,7 +1,7 @@
 from datetime import datetime
 from src.models.db import db
 
-# Crimes graves: apenas estes podem gerar recompensa
+# Crimes graves: prioridade na fila de análise
 CATEGORIAS = {
     'homicidio': {'nome': 'Homicídio', 'grave': True},
     'latrocinio': {'nome': 'Latrocínio', 'grave': True},
@@ -32,15 +32,6 @@ STATUS = (
     'arquivada',
 )
 
-STATUS_RECOMPENSA = (
-    'nao_elegivel',
-    'elegivel',          # equipe aprovou um valor; cidadão pode resgatar
-    'resgate_solicitado',
-    'paga',
-)
-
-METODOS_RESGATE = ('pix', 'vale_presente', 'recarga_celular')
-
 
 class Denuncia(db.Model):
     __tablename__ = 'denuncias'
@@ -68,14 +59,6 @@ class Denuncia(db.Model):
     status = db.Column(db.String(30), default='recebida', nullable=False)
     parecer_analise = db.Column(db.Text)  # uso interno da equipe
 
-    recompensa_status = db.Column(db.String(30), default='nao_elegivel', nullable=False)
-    recompensa_valor = db.Column(db.Float)
-    resgate_metodo = db.Column(db.String(30))
-    # Destino do pagamento (chave PIX ou celular). Apagado assim que o pagamento é feito.
-    resgate_destino = db.Column(db.String(150))
-    # Código que o cidadão recebe ao pedir resgate (ex.: vale-presente)
-    resgate_codigo = db.Column(db.String(200))
-
     # Sem horário exato para dificultar cruzamento com registros de operadora/rede
     criada_em = db.Column(db.Date, default=lambda: datetime.utcnow().date())
 
@@ -94,12 +77,6 @@ class Denuncia(db.Model):
             'categoria': CATEGORIAS.get(self.categoria, {}).get('nome', self.categoria),
             'status': self.status,
             'criada_em': self.criada_em.isoformat() if self.criada_em else None,
-            'recompensa': {
-                'status': self.recompensa_status,
-                'valor': self.recompensa_valor if self.recompensa_status != 'nao_elegivel' else None,
-                'metodo': self.resgate_metodo,
-                'codigo': self.resgate_codigo if self.recompensa_status == 'paga' else None,
-            },
             'mensagens': [m.to_dict() for m in self.mensagens],
         }
 
@@ -129,12 +106,6 @@ class Denuncia(db.Model):
             'fotos': [f.id for f in self.fotos],
             'status': self.status,
             'parecer_analise': self.parecer_analise,
-            'recompensa': {
-                'status': self.recompensa_status,
-                'valor': self.recompensa_valor,
-                'metodo': self.resgate_metodo,
-                'destino': self.resgate_destino,
-            },
             'mensagens': [m.to_dict() for m in self.mensagens],
             'criada_em': self.criada_em.isoformat() if self.criada_em else None,
         }

@@ -8,6 +8,8 @@ from functools import wraps
 from flask import request, jsonify
 from PIL import Image, ImageOps
 
+from src.utils.limite import bloqueado, registrar
+
 # Alfabeto sem caracteres ambíguos (0/O, 1/I/L) para códigos digitados à mão
 ALFABETO = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'
 
@@ -63,9 +65,14 @@ def exige_analista(f):
     """Protege rotas internas da equipe de análise com um token (variável ANALISTA_TOKEN)."""
     @wraps(f)
     def wrapper(*args, **kwargs):
+        # Depois de 10 tokens errados em 15 minutos, o visitante fica bloqueado por um tempo
+        bloqueio = bloqueado('analista_falha', 10, 900)
+        if bloqueio:
+            return bloqueio
         token = os.environ.get('ANALISTA_TOKEN')
         enviado = request.headers.get('Authorization', '').removeprefix('Bearer ').strip()
         if not token or not hmac.compare_digest(enviado, token):
+            registrar('analista_falha')
             return jsonify({'error': 'Não autorizado'}), 401
         return f(*args, **kwargs)
     return wrapper

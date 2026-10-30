@@ -1,0 +1,29 @@
+# VPS: `docker compose up -d` sobe o site com HTTPS automático (Caddy).
+# Antes, copie .env.example para .env e preencha.
+services:
+  site:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CONFIAR_PROXY: "${CONFIAR_PROXY:-1}"
+    volumes:
+      - dados:/data
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: "${DOMINIO}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_dados:/data
+    depends_on:
+      - site
+
+volumes:
+  dados:
+  caddy_dados:

@@ -118,9 +118,28 @@ button.secundario, .botao.secundario { background: #fff; color: var(--primaria);
 button:disabled { opacity: .6; }
 
 .filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-.filtros input:first-child { grid-column: 1 / -1; }
+.filtros input:first-child, .filtros select[name="cidade"] { grid-column: 1 / -1; }
 
-#mapa { height: 280px; border-radius: var(--raio); border: 1px solid var(--borda); }
+.aviso-golpe { margin-bottom: 12px; }
+
+button.link-denunciar {
+  display: inline;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  background: none;
+  color: var(--suave);
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: underline;
+}
+.form-denuncia-vaga { border-top: 1px solid var(--borda); margin-top: 8px; }
+
+.acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.acoes button { flex: 1 1 120px; margin: 0; padding: 10px; }
+
+/* isolation: os controles do Leaflet (z-index 1000) não passam por cima do topo fixo */
+#mapa { height: 280px; border-radius: var(--raio); border: 1px solid var(--borda); isolation: isolate; }
 
 .erro { color: var(--alerta); font-weight: 600; margin-top: 12px; }
 
@@ -163,3 +182,39 @@ button:disabled { opacity: .6; }
   color: var(--suave);
 }
 .rodape a { color: var(--suave); }
+
+.nav-equipe { display: flex; gap: 8px; margin-bottom: 12px; }
+.nav-equipe a {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+.nav-equipe a.ativa { background: var(--primaria); border-color: var(--primaria); color: #fff; }
+
+.filtros label.check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 500;
+}
+.filtros label.check input { width: auto; }
+
+.cartao.clicavel { cursor: pointer; }
+.etiqueta-grave { background: #fde8e8; color: var(--alerta); }
+.texto-grave { color: var(--alerta); }
+.texto-livre { white-space: pre-wrap; }
+.erro.sucesso { color: var(--primaria); }
+
+.fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.fotos img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; display: block; }
+
+.qr-pix { display: block; width: 240px; max-width: 100%; margin: 12px auto; image-rendering: pixelated; }
+#pix-copia { min-height: 90px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
+.aviso.sucesso { background: #e6f4f1; border-color: #99d5c9; }
