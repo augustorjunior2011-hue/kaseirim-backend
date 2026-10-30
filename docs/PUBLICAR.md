@@ -30,7 +30,7 @@ Guarde num gerenciador de senhas. É com ela que a equipe entra em `seusite.com.
    `algo.up.railway.app`. Já dá para abrir no celular.
 6. (Opcional) Domínio próprio: em **Networking → Custom Domain**, digite o domínio e crie no
    registro.br o registro CNAME que a Railway mostrar.
-7. Coloque o endereço final em `URL_PUBLICA` (ex.: `https://vagasperto.com.br`).
+7. Coloque o endereço final em `URL_PUBLICA` (ex.: `https://vagai.com.br`).
 
 Cada vez que algo for juntado na versão principal do GitHub, a Railway publica sozinha.
 
@@ -111,5 +111,5 @@ segundos e libera assim que o PIX cai.
 - [ ] Fazer uma denúncia de teste, entrar no painel `/#/equipe` e responder pela conversa.
 - [ ] Conferir se o mapa carrega (ruas aparecendo).
 - [ ] Testar um PIX com credenciais de teste.
-- [ ] Trocar o nome "Vagas Perto" em `src/site/index.html` pelo nome escolhido.
+- [ ] Registrar o domínio vagai.com.br e criar o e-mail contato@vagai.com.br (usado no `MAPA_USER_AGENT`).
 - [ ] Configurar backup.
