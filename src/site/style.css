@@ -277,6 +277,8 @@ button.link-denunciar:hover { background: none; color: var(--alerta); }
 
 .aviso { background: var(--destaque-claro); border: 1px solid #f6d58a; border-radius: var(--raio); padding: 12px 14px; font-size: 14px; }
 .aviso ul { margin: 6px 0 0; padding-left: 18px; }
+.aviso-legal { margin-top: 16px; background: #f4f6f8; border-color: #d5dde3; }
+.aviso-legal li + li { margin-top: 6px; }
 .aviso.sucesso { background: var(--primaria-clara); border-color: #9fd8c8; }
 
 .credenciais {

@@ -545,9 +545,22 @@ function explicacaoDenuncia() {
         <strong>Sair rápido</strong>.</span></li>
     </ul>
 
+    <div class="aviso aviso-legal">
+      <strong>Importante</strong>
+      <ul>
+        <li>O Vagaí é uma <strong>iniciativa independente</strong>. Não tem ligação com governo, polícia, Ministério
+          Público ou qualquer órgão público, nem com partido ou político.</li>
+        <li>Não somos polícia: <strong>não investigamos, não prendemos e não damos retorno sobre operações</strong>.
+          Apenas repassamos as informações recebidas às autoridades competentes, como qualquer cidadão pode fazer.</li>
+        <li><strong>Não é um serviço de emergência.</strong> Se alguém corre perigo agora, ligue <strong>190</strong>
+          (Polícia Militar) ou <strong>192</strong> (SAMU). Este canal não substitui o boletim de ocorrência.</li>
+        <li>As informações são de <strong>responsabilidade de quem denuncia</strong>. Denúncia falsa é crime
+          (art. 339 do Código Penal).</li>
+      </ul>
+    </div>
+
     <a class="botao perigo" href="#/denunciar">${icone('alerta')} Fazer uma denúncia</a>
-    <a class="botao secundario" href="#/acompanhar">Acompanhar minha denúncia</a>
-    <p class="suave" style="margin-top:14px">Denúncia falsa é crime (art. 339 do Código Penal).</p>`;
+    <a class="botao secundario" href="#/acompanhar">Acompanhar minha denúncia</a>`;
 }
 
 function telaCanal() {
