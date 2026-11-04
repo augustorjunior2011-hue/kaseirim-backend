@@ -9,14 +9,26 @@ from unittest import mock
 _tmp = tempfile.mkdtemp()
 os.environ['DATABASE_URL'] = f"sqlite:///{os.path.join(_tmp, 'test.db')}"
 os.environ['UPLOAD_DIR'] = os.path.join(_tmp, 'uploads')
-os.environ['ANALISTA_TOKEN'] = 'token-teste'
+os.environ['ANALISTA_TOKEN'] = 'chave-de-instalacao'
+os.environ['CHAVE_CRIPTOGRAFIA'] = 'chave-de-teste-bem-longa-e-aleatoria'
 os.environ['DESATIVAR_LIMITES'] = '1'
 
 from PIL import Image  # noqa: E402
 from src.main import app  # noqa: E402
+from src.models.db import db  # noqa: E402
+from src.models.equipe import Analista  # noqa: E402
+from src.utils import totp  # noqa: E402
+from src.utils.equipe import criar_sessao  # noqa: E402
 from src.utils.limite import zerar_limites  # noqa: E402
 
-ANALISTA = {'Authorization': 'Bearer token-teste'}
+# Uma conta da equipe já confirmada, com sessão aberta, para os testes das rotas internas
+with app.app_context():
+    _analista = Analista(nome='Analista Teste', senha_hash='-', totp_segredo=totp.gerar_segredo(),
+                         ativo=True, confirmado_em=datetime.utcnow())
+    db.session.add(_analista)
+    db.session.commit()
+    ANALISTA = {'Authorization': 'Bearer ' + criar_sessao(_analista)}
+    ANALISTA_ID = _analista.id
 
 
 def foto_com_gps():
@@ -165,6 +177,14 @@ class EmpregoTest(unittest.TestCase):
         self.client.post(f'/api/empregos/{vid}/denunciar', json={'motivo': 'golpe'})
         self.assertIn(vid, self.ids_no_ar())
 
+    def test_vaga_preenchida_sai_do_ar(self):
+        _, r = self.publicar('21900000007', tipo='procura')
+        vid, codigo = r['vaga']['id'], r['codigo_gestao']
+        self.assertIn(vid, self.ids_no_ar())
+        self.assertEqual(self.client.post(f'/api/empregos/{vid}/encerrar', json={'codigo_gestao': 'x'}).status_code, 403)
+        self.assertEqual(self.client.post(f'/api/empregos/{vid}/encerrar', json={'codigo_gestao': codigo}).status_code, 200)
+        self.assertNotIn(vid, self.ids_no_ar())
+
     def test_editar_remover_e_destaque(self):
         _, r = self.publicar('21900000006')
         vid, codigo = r['vaga']['id'], r['codigo_gestao']
@@ -268,6 +288,108 @@ class DestaquePixTest(unittest.TestCase):
                                   json={'codigo_gestao': r['codigo_gestao']}).get_json()
         self.assertEqual(gestao['status'], 'pendente')
         self.assertFalse(gestao['no_ar'])
+
+
+class EquipeTest(unittest.TestCase):
+    def setUp(self):
+        self.client = app.test_client()
+
+    def test_convite_cadastro_codigo_e_login(self):
+        self.assertTrue(self.client.get('/api/equipe/estado').get_json()['tem_contas'])
+        # com conta já existente, a chave de instalação não cria mais contas
+        r = self.client.post('/api/equipe/cadastro', json={'convite': 'chave-de-instalacao', 'nome': 'X', 'senha': 'a' * 12})
+        self.assertEqual(r.status_code, 403)
+
+        convite = self.client.post('/api/equipe/convites', headers=ANALISTA).get_json()['convite']
+        r = self.client.post('/api/equipe/cadastro', json={'convite': convite, 'nome': 'Maria', 'senha': 'curta'})
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post('/api/equipe/cadastro', json={'convite': convite, 'nome': 'Maria', 'senha': 'senha-bem-forte-1'})
+        self.assertEqual(r.status_code, 201)
+        cad = r.get_json()
+        self.assertTrue(cad['qr_svg'].startswith('data:image/svg+xml'))
+        self.assertIn('otpauth://totp/', cad['link'])
+
+        # convite é de uso único
+        r = self.client.post('/api/equipe/cadastro', json={'convite': convite, 'nome': 'Outra', 'senha': 'senha-bem-forte-2'})
+        self.assertEqual(r.status_code, 403)
+
+        segredo = cad['segredo']
+        r = self.client.post('/api/equipe/cadastro/confirmar', json={'cadastro_id': cad['cadastro_id'], 'codigo': '000000'})
+        self.assertEqual(r.status_code, 400)
+        codigo = totp.codigo_atual(segredo)
+        r = self.client.post('/api/equipe/cadastro/confirmar', json={'cadastro_id': cad['cadastro_id'], 'codigo': codigo})
+        self.assertEqual(r.status_code, 200)
+
+        # o mesmo código não vale de novo; senha errada também não entra
+        login = {'nome': 'maria', 'senha': 'senha-bem-forte-1', 'codigo': codigo}
+        self.assertEqual(self.client.post('/api/equipe/entrar', json=login).status_code, 401)
+        proximo = totp._codigo(segredo, int(datetime.utcnow().timestamp() // 30) + 1)
+        self.assertEqual(self.client.post('/api/equipe/entrar', json={**login, 'senha': 'errada', 'codigo': proximo}).status_code, 401)
+        r = self.client.post('/api/equipe/entrar', json={**login, 'codigo': proximo})
+        self.assertEqual(r.status_code, 200)
+        maria = {'Authorization': 'Bearer ' + r.get_json()['token']}
+        self.assertEqual(self.client.get('/api/equipe/eu', headers=maria).get_json()['nome'], 'Maria')
+
+        # registro de acessos mostra quem fez o quê
+        acoes = [x['acao'] for x in self.client.get('/api/equipe/registro', headers=maria).get_json()]
+        for acao in ('convite_criado', 'conta_criada', 'entrou'):
+            self.assertIn(acao, acoes)
+
+        # desativar a conta derruba a sessão na hora
+        mid = next(c['id'] for c in self.client.get('/api/equipe/contas', headers=ANALISTA).get_json() if c['nome'] == 'Maria')
+        self.client.post(f'/api/equipe/contas/{mid}/desativar', headers=ANALISTA)
+        self.assertEqual(self.client.get('/api/equipe/eu', headers=maria).status_code, 401)
+
+    def test_sair_encerra_a_sessao(self):
+        with app.app_context():
+            token = criar_sessao(db.session.get(Analista, ANALISTA_ID))
+        h = {'Authorization': 'Bearer ' + token}
+        self.assertEqual(self.client.post('/api/equipe/sair', headers=h).status_code, 204)
+        self.assertEqual(self.client.get('/api/equipe/eu', headers=h).status_code, 401)
+
+    def test_primeira_conta_com_chave_de_instalacao(self):
+        with app.app_context():
+            ativos = Analista.query.filter_by(ativo=True).all()
+            for a in ativos:
+                a.ativo = False
+            db.session.commit()
+            try:
+                r = self.client.post('/api/equipe/cadastro', json={
+                    'convite': 'chave-de-instalacao', 'nome': 'Primeira', 'senha': 'senha-bem-forte-3'})
+                self.assertEqual(r.status_code, 201)
+            finally:
+                for a in ativos:
+                    a.ativo = True
+                db.session.commit()
+
+
+class CriptografiaTest(unittest.TestCase):
+    def test_denuncia_e_foto_ficam_ilegiveis_no_banco_e_no_disco(self):
+        client = app.test_client()
+        r = client.post('/api/denuncias', data={
+            'categoria': 'trafico_armas', 'descricao': 'Guardam armas na casa amarela da esquina da escola.',
+            'latitude': '-22.9', 'longitude': '-43.2', 'suspeito_apelidos': 'Cabeção',
+            'fotos': [(foto_com_gps(), 'f.jpg')],
+        }, content_type='multipart/form-data')
+        self.assertEqual(r.status_code, 201)
+        with app.app_context():
+            linha = db.session.execute(db.text(
+                "SELECT id, descricao, latitude, suspeito_apelidos FROM denuncias ORDER BY id DESC LIMIT 1")).one()
+            self.assertNotIn('armas', linha.descricao)
+            self.assertNotIn('Cabeção', linha.suspeito_apelidos)
+            self.assertNotIn('-22.9', linha.latitude)
+            arquivo = db.session.execute(db.text(
+                f"SELECT arquivo FROM fotos_denuncia WHERE denuncia_id = {linha.id}")).scalar()
+        with open(os.path.join(os.environ['UPLOAD_DIR'], arquivo), 'rb') as f:
+            self.assertFalse(f.read(2) == b'\xff\xd8')  # não é um JPEG legível
+        detalhe = client.get(f'/api/analise/denuncias/{linha.id}', headers=ANALISTA).get_json()
+        self.assertEqual(detalhe['suspeito']['apelidos'], 'Cabeção')
+        self.assertEqual(detalhe['localizacao']['latitude'], -22.9)
+        foto = client.get(f"/api/analise/fotos/{detalhe['fotos'][0]}", headers=ANALISTA)
+        self.assertEqual(foto.data[:2], b'\xff\xd8')
+        acoes = [x['acao'] for x in client.get('/api/equipe/registro', headers=ANALISTA).get_json()]
+        self.assertIn('denuncia_vista', acoes)
+        self.assertIn('foto_vista', acoes)
 
 
 class LimiteTest(unittest.TestCase):

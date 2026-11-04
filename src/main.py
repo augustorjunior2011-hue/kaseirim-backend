@@ -8,6 +8,7 @@ from src.models.db import db
 from src.routes.denuncia import denuncia_bp
 from src.routes.emprego import emprego_bp
 from src.routes.mapa import mapa_bp
+from src.routes.equipe import equipe_bp
 
 BASE_DIR = os.path.dirname(__file__)
 
@@ -18,6 +19,7 @@ app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'site'))
 app.register_blueprint(denuncia_bp, url_prefix='/api')
 app.register_blueprint(emprego_bp, url_prefix='/api')
 app.register_blueprint(mapa_bp, url_prefix='/api')
+app.register_blueprint(equipe_bp, url_prefix='/api')
 
 # Limite de upload (fotos das denúncias)
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
@@ -34,8 +36,8 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-if not os.environ.get('ANALISTA_TOKEN'):
-    app.logger.warning('ANALISTA_TOKEN não definido: o painel da equipe fica bloqueado.')
+if not os.environ.get('CHAVE_CRIPTOGRAFIA'):
+    app.logger.warning('CHAVE_CRIPTOGRAFIA não definida: denúncias e fotos ficam ilegíveis após reiniciar.')
 
 
 @app.route('/api/saude')

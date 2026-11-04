@@ -34,7 +34,7 @@ Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask na raiz do dom
 ## Vagas de emprego
 
 - **Quem procura trabalho** publica na hora. **Vagas de empresas** só vão para o ar depois que a
-  equipe aprova, no painel `/#/equipe` (não há link para ele no site; pede o `ANALISTA_TOKEN`).
+  equipe aprova, no painel `/#/equipe` (não há link para ele no site; pede login da equipe).
 - **Palavras suspeitas** (taxa, pix antecipado, investimento...) mandam qualquer anúncio para a fila
   de aprovação. Lista em `PALAVRAS_SUSPEITAS` (`src/models/emprego.py`).
 - **Denunciar anúncio:** qualquer pessoa marca um anúncio como golpe. Com 3 denúncias ele sai do ar e
@@ -44,6 +44,30 @@ Site simples (HTML/CSS/JS, sem build) servido pelo próprio Flask na raiz do dom
 - **Filtro por cidade:** os nomes são padronizados ("rio DE janeiro" vira "Rio de Janeiro") e o
   filtro mostra só cidades que têm anúncios no ar.
 - Validade de 30 dias, contados a partir da aprovação.
+
+## Segurança da equipe
+
+- **Contas individuais** (nome + senha + código de 6 dígitos de um aplicativo autenticador, padrão TOTP).
+  A primeira conta é criada com a chave de instalação (`ANALISTA_TOKEN`); as demais com **convite** de uso único
+  (24 h), gerado no painel. O mesmo código não vale duas vezes.
+- **Sessões de 8 horas**; sair encerra a sessão; desativar uma conta derruba as sessões dela na hora.
+- **Registro de acessos**: login, convites, abrir a lista/uma denúncia, ver foto, atualizar, mandar mensagem,
+  aprovar/rejeitar/destacar/remover anúncio. Aparece na aba **Equipe** do painel.
+- **Criptografia**: textos da denúncia, local (inclusive coordenadas), cidade, dados do suspeito, parecer,
+  mensagens e fotos ficam criptografados (Fernet/AES) com `CHAVE_CRIPTOGRAFIA`. Ficam em claro só o que serve
+  de filtro: tipo de crime, UF, status e datas.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/equipe/estado` | Se já existe alguma conta |
+| POST | `/api/equipe/cadastro` | `{convite, nome, senha}` → QR code do autenticador |
+| POST | `/api/equipe/cadastro/confirmar` | `{cadastro_id, codigo}` ativa a conta |
+| POST | `/api/equipe/entrar` | `{nome, senha, codigo}` → token da sessão |
+| POST | `/api/equipe/sair` | Encerra a sessão |
+| GET | `/api/equipe/contas` | Contas da equipe |
+| POST | `/api/equipe/convites` | Gera um convite |
+| POST | `/api/equipe/contas/<id>/desativar` | Desativa uma conta |
+| GET | `/api/equipe/registro` | Últimas 200 ações |
 
 ## Recompensas (suspenso)
 
@@ -67,7 +91,7 @@ Antes de voltar com ela, validar com advogado:
 
 A equipe pode pedir detalhes ao denunciante pelo chat anônimo (`/mensagens`).
 
-**Painel da equipe** (`/#/equipe/denuncias`, pede o `ANALISTA_TOKEN`): lista com filtros por status,
+**Painel da equipe** (`/#/equipe/denuncias`, pede login da equipe): lista com filtros por status,
 tipo de crime e "só crimes graves"; ao abrir uma denúncia, mostra descrição, ponto no mapa, dados do
 suspeito e fotos, e permite mudar o status, escrever um parecer interno (o denunciante não vê) e
 conversar com o denunciante.
@@ -87,8 +111,9 @@ Públicos (cidadão):
 | POST | `/api/empregos` | Publica oferta/procura → `codigo_gestao` |
 | PUT/DELETE | `/api/empregos/<id>` | Edita/remove com `codigo_gestao` |
 | POST | `/api/empregos/<id>/denunciar` | `{motivo, detalhe?}` marca anúncio como golpe/abusivo |
+| POST | `/api/empregos/<id>/encerrar` | `{codigo_gestao}` vaga preenchida / já conseguiu trabalho: sai do ar |
 
-Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
+Equipe de análise (header `Authorization: Bearer <token da sessão>`, obtido em `POST /api/equipe/entrar`):
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -104,7 +129,9 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 
 ## Variáveis de ambiente
 
-- `ANALISTA_TOKEN` — obrigatório para as rotas `/api/analise/*` (sem ele, todas retornam 401).
+- `ANALISTA_TOKEN` — chave de instalação: só cria a primeira conta da equipe.
+- `CHAVE_CRIPTOGRAFIA` — criptografa denúncias, mensagens, local, dados do suspeito, fotos e os segredos do
+  código de celular da equipe. Guarde uma cópia e nunca troque.
 - `UPLOAD_DIR` — pasta das fotos (padrão `src/database/uploads`, fora da pasta pública).
 - `DATABASE_URL` — banco (padrão SQLite em `src/database/app.db`).
 - `MAPA_USER_AGENT` / `MAPA_TILE_URL` — identificação e origem das imagens do mapa.
@@ -128,7 +155,6 @@ Lista completa com explicações em `.env.example`. Como publicar: `docs/PUBLICA
 
 ## Pendências técnicas
 
-- Criptografia dos campos sensíveis no banco.
 - Testar o PIX com uma conta real do Mercado Pago (credenciais de teste) — até aqui só foi testado simulado.
 - Registros de acesso (IP): guardar só o que o art. 15 exigir, separados do banco de denúncias,
   com acesso restrito e apagados após o prazo — nunca gravar o protocolo junto do IP.

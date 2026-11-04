@@ -1,7 +1,7 @@
 import os
 import secrets
 
-from flask import Blueprint, request, jsonify, send_file, abort
+from flask import Blueprint, Response, request, jsonify, abort
 
 from src.models.db import db
 from src.models.denuncia import (
@@ -10,9 +10,11 @@ from src.models.denuncia import (
 )
 from src.utils.anonimato import (
     gerar_codigo, gerar_chave_secreta, hash_chave, conferir_chave,
-    normalizar, limpar_imagem, exige_analista,
+    normalizar, limpar_imagem,
 )
+from src.utils.equipe import exige_analista, registrar_acesso
 from src.utils.limite import limitar
+from src.utils.cripto import cifrar_bytes, decifrar_bytes
 
 denuncia_bp = Blueprint('denuncia', __name__)
 
@@ -125,9 +127,9 @@ def criar_denuncia():
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     for conteudo in fotos_limpas:
-        nome = f"{secrets.token_hex(16)}.jpg"
+        nome = f"{secrets.token_hex(16)}.bin"
         with open(os.path.join(UPLOAD_DIR, nome), 'wb') as destino:
-            destino.write(conteudo)
+            destino.write(cifrar_bytes(conteudo))
         db.session.add(FotoDenuncia(denuncia_id=denuncia.id, arquivo=nome))
 
     db.session.commit()
@@ -167,7 +169,7 @@ def enviar_mensagem_cidadao():
 
 
 # ---------------------------------------------------------------------------
-# Rotas da equipe de análise (protegidas por ANALISTA_TOKEN)
+# Rotas da equipe de análise (exigem login da equipe; cada acesso fica registrado)
 # ---------------------------------------------------------------------------
 
 @denuncia_bp.route('/analise/denuncias', methods=['GET'])
@@ -186,6 +188,8 @@ def analise_listar():
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 100)
     resultado = query.order_by(Denuncia.id.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    registrar_acesso('lista_denuncias', ', '.join(f'{k}={v}' for k, v in request.args.items()) or 'todas')
+    db.session.commit()
     return jsonify({
         'denuncias': [d.to_dict() for d in resultado.items],
         'total': resultado.total,
@@ -197,7 +201,10 @@ def analise_listar():
 @denuncia_bp.route('/analise/denuncias/<int:denuncia_id>', methods=['GET'])
 @exige_analista
 def analise_detalhe(denuncia_id):
-    return jsonify(db.get_or_404(Denuncia, denuncia_id).to_dict())
+    denuncia = db.get_or_404(Denuncia, denuncia_id)
+    registrar_acesso('denuncia_vista', f'denúncia {denuncia.id}')
+    db.session.commit()
+    return jsonify(denuncia.to_dict())
 
 
 @denuncia_bp.route('/analise/fotos/<int:foto_id>', methods=['GET'])
@@ -207,7 +214,13 @@ def analise_foto(foto_id):
     caminho = os.path.join(UPLOAD_DIR, foto.arquivo)
     if not os.path.exists(caminho):
         abort(404)
-    return send_file(caminho, mimetype='image/jpeg')
+    with open(caminho, 'rb') as arquivo:
+        conteudo = decifrar_bytes(arquivo.read())
+    registrar_acesso('foto_vista', f'denúncia {foto.denuncia_id}')
+    db.session.commit()
+    resp = Response(conteudo, mimetype='image/jpeg')
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 @denuncia_bp.route('/analise/denuncias/<int:denuncia_id>', methods=['PUT'])
@@ -223,6 +236,7 @@ def analise_atualizar(denuncia_id):
     if 'parecer_analise' in dados:
         denuncia.parecer_analise = dados['parecer_analise']
 
+    registrar_acesso('denuncia_atualizada', f'denúncia {denuncia.id}: {denuncia.status}')
     db.session.commit()
     return jsonify(denuncia.to_dict())
 
@@ -235,6 +249,7 @@ def analise_mensagem(denuncia_id):
     if not texto:
         return jsonify({'error': 'Mensagem vazia'}), 400
     db.session.add(MensagemDenuncia(denuncia_id=denuncia.id, autor='equipe', texto=texto))
+    registrar_acesso('mensagem_enviada', f'denúncia {denuncia.id}')
     db.session.commit()
     return jsonify(denuncia.to_dict()), 201
 
