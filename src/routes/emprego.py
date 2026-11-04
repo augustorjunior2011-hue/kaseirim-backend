@@ -11,7 +11,8 @@ from src.models.emprego import (
     normalizar_cidade, palavras_suspeitas,
 )
 from src.utils import mercadopago
-from src.utils.anonimato import gerar_codigo, hash_chave, conferir_chave, exige_analista
+from src.utils.anonimato import gerar_codigo, hash_chave, conferir_chave
+from src.utils.equipe import exige_analista, registrar_acesso
 from src.utils.limite import limitar
 
 emprego_bp = Blueprint('emprego', __name__)
@@ -200,6 +201,19 @@ def remover_vaga(vaga_id):
     return '', 204
 
 
+@emprego_bp.route('/empregos/<int:vaga_id>/encerrar', methods=['POST'])
+@limitar('vaga_gestao', 30, 600)
+def encerrar_vaga(vaga_id):
+    """O anunciante avisa que a vaga foi preenchida (ou que já conseguiu trabalho): sai do ar na hora."""
+    vaga = _vaga_autorizada(vaga_id, request.get_json(silent=True) or {})
+    if not vaga:
+        return jsonify({'error': 'Código de gestão inválido'}), 403
+    vaga.ativa = False
+    vaga.encerrada_em = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'message': 'Anúncio encerrado. Que bom que deu certo!'})
+
+
 @emprego_bp.route('/empregos/<int:vaga_id>/denunciar', methods=['POST'])
 @limitar('vaga_denunciar', 20, 3600)
 def denunciar_vaga(vaga_id):
@@ -371,6 +385,7 @@ def moderacao_listar():
 def moderacao_aprovar(vaga_id):
     vaga = db.get_or_404(Vaga, vaga_id)
     vaga.publicar()
+    registrar_acesso('vaga_aprovada', f'anúncio {vaga.id}')
     db.session.commit()
     return jsonify(vaga.to_moderacao_dict())
 
@@ -381,6 +396,7 @@ def moderacao_rejeitar(vaga_id):
     vaga = db.get_or_404(Vaga, vaga_id)
     vaga.status = 'rejeitada'
     vaga.motivo_moderacao = ((request.get_json(silent=True) or {}).get('motivo') or '').strip()[:300] or None
+    registrar_acesso('vaga_rejeitada', f'anúncio {vaga.id}')
     db.session.commit()
     return jsonify(vaga.to_moderacao_dict())
 
@@ -394,6 +410,7 @@ def ativar_destaque(vaga_id):
     if not isinstance(dias, int) or not 1 <= dias <= 90:
         return jsonify({'error': 'Dias deve ser um inteiro entre 1 e 90'}), 400
     vaga.estender_destaque(dias)
+    registrar_acesso('vaga_destaque', f'anúncio {vaga.id}: {dias} dias')
     db.session.commit()
     return jsonify(vaga.to_moderacao_dict())
 
@@ -404,5 +421,6 @@ def moderar_vaga(vaga_id):
     """Remove anúncio abusivo / golpe."""
     vaga = db.get_or_404(Vaga, vaga_id)
     vaga.ativa = False
+    registrar_acesso('vaga_removida', f'anúncio {vaga.id}')
     db.session.commit()
     return '', 204

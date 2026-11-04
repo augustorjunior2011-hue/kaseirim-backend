@@ -3,13 +3,28 @@
 Há dois caminhos. O **A (Railway)** é o mais fácil e não exige saber mexer em servidor.
 O **B (VPS)** é um pouco mais barato e dá mais controle.
 
-Antes de qualquer um, gere a **senha do painel da equipe** (`ANALISTA_TOKEN`):
+Antes de qualquer um, gere **dois segredos** longos e aleatórios (no Render, o botão **Generate** faz isso):
 
 ```
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Guarde num gerenciador de senhas. É com ela que a equipe entra em `seusite.com.br/#/equipe`.
+- `ANALISTA_TOKEN` — **chave de instalação**. Serve só para criar a **primeira conta** da equipe em
+  `seusite.com.br/#/equipe`. Depois disso ela não abre mais nada; as outras pessoas entram por convite.
+- `CHAVE_CRIPTOGRAFIA` — chave que criptografa denúncias e fotos. **Guarde uma cópia segura e nunca a troque**:
+  sem ela os dados ficam ilegíveis para sempre. Ela não pode ficar no mesmo lugar que o backup do banco.
+
+### Contas da equipe
+
+1. Abra `seusite.com.br/#/equipe`. Sem nenhuma conta, aparece **Primeiro acesso**.
+2. Digite a chave de instalação, seu nome e uma senha (mínimo 10 caracteres).
+3. Escaneie o QR code com um aplicativo autenticador (Google Authenticator, Microsoft Authenticator, Authy)
+   e digite o código de 6 dígitos.
+4. Para a segunda pessoa: no painel, aba **Equipe** → **Convidar uma pessoa**. Passe o convite pessoalmente;
+   ele vale 24 horas e só uma vez. Ela faz os mesmos passos usando o convite.
+
+Cada entrada pede nome + senha + código do celular. A sessão dura 8 horas. A aba **Equipe** mostra o registro de
+acessos (quem abriu cada denúncia e foto, quem aprovou anúncios etc.) e permite desativar uma conta.
 
 ---
 
@@ -21,7 +36,8 @@ Guarde num gerenciador de senhas. É com ela que a equipe entra em `seusite.com.
 3. No serviço criado, vá em **Settings → Volumes → Add Volume** e monte em **`/data`**.
    É ali que ficam o banco de dados e as fotos. Sem o volume, tudo some a cada atualização.
 4. Em **Variables**, adicione:
-   - `ANALISTA_TOKEN` = a senha gerada acima
+   - `ANALISTA_TOKEN` = a chave de instalação gerada acima
+   - `CHAVE_CRIPTOGRAFIA` = a chave de criptografia gerada acima
    - `CONFIAR_PROXY` = `1`
    - `RAILWAY_RUN_UID` = `0` (os volumes da Railway pertencem ao root; sem isso o site não consegue gravar em `/data`)
    - `MAPA_USER_AGENT` = `NomeDoSite/1.0 (seu-email@dominio.com.br)`
@@ -50,7 +66,7 @@ Serve para Hetzner, Contabo, DigitalOcean, Hostinger VPS etc. Escolha Ubuntu 24.
    git clone https://github.com/augustorjunior2011-hue/kaseirim-backend.git
    cd kaseirim-backend
    cp .env.example .env
-   nano .env        # preencha DOMINIO, URL_PUBLICA, ANALISTA_TOKEN...
+   nano .env        # preencha DOMINIO, URL_PUBLICA, ANALISTA_TOKEN, CHAVE_CRIPTOGRAFIA...
    ```
 4. **Suba:**
    ```

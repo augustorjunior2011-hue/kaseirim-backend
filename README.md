@@ -9,7 +9,7 @@ Rodar localmente:
 
 ```
 pip install -r requirements.txt
-ANALISTA_TOKEN=uma-senha python src/main.py
+ANALISTA_TOKEN=chave-de-instalacao CHAVE_CRIPTOGRAFIA=outra-chave python src/main.py
 ```
 
 Testes: `python -m unittest discover -s tests -t .`

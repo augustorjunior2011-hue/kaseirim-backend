@@ -31,6 +31,7 @@ const ICONES = {
   foto: '<rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
   olho: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   mais: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
 };
 
 function icone(nome) {
@@ -61,6 +62,11 @@ async function api(caminho, opcoes = {}) {
   }
   const resp = await fetch('/api' + caminho, config);
   const dados = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
+  if (resp.status === 401 && opcoes.token) {
+    // sessão da equipe expirou: limpa e mostra o login de novo
+    tokenEquipe = '';
+    setTimeout(renderizar, 1500);
+  }
   if (!resp.ok) throw new Error(dados.error || 'Não foi possível concluir. Tente de novo.');
   return dados;
 }
@@ -408,8 +414,27 @@ async function meuAnuncio(vaga, codigo) {
       ${vaga.destaque ? `<p class="suave">Em destaque até ${dataBR(vaga.destaque_ate)}</p>` : ''}
       ${vaga.motivo_rejeicao ? `<p class="erro">Motivo: ${esc(vaga.motivo_rejeicao)}</p>` : ''}
     </div>
+    <div class="cartao encerrar">
+      <h3>${vaga.tipo === 'oferta' ? 'A vaga já foi preenchida?' : 'Já conseguiu trabalho?'}</h3>
+      <p class="suave">Encerre o anúncio para ele sair da lista e as pessoas pararem de ligar.</p>
+      <button type="button" id="encerrar">${icone('check')} ${vaga.tipo === 'oferta' ? 'Vaga preenchida' : 'Já consegui trabalho'}</button>
+    </div>
     <div id="area-destaque"></div>
     <button type="button" class="secundario" id="remover">Remover anúncio</button>`;
+
+  document.getElementById('encerrar').addEventListener('click', async e => {
+    await enviando(e.target, async () => {
+      try {
+        const r = await api(`/empregos/${vaga.id}/encerrar`, { method: 'POST', json: { codigo_gestao: codigo } });
+        tela.innerHTML = `
+          <div class="vazio"><strong>${esc(r.message)}</strong>
+            O anúncio saiu da lista. Se precisar de novo, é só anunciar outra vez.</div>
+          <a class="botao" href="#/">Ver vagas</a>`;
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 
   document.getElementById('remover').addEventListener('click', async e => {
     if (!confirm('Remover este anúncio?')) return;
@@ -764,18 +789,105 @@ const ABAS_EQUIPE = {
 function entrarEquipe(proximo) {
   tela.innerHTML = `
     <h1>Painel da equipe</h1>
-    <form id="form-token">
-      <label>Token de acesso <input name="token" type="password" required autocomplete="off"></label>
+    <p class="suave">Entre com seu nome, sua senha e o código de 6 dígitos do aplicativo autenticador.</p>
+    <form id="form-entrar">
+      <label>Nome <input name="nome" required autocomplete="username"></label>
+      <label>Senha <input name="senha" type="password" required autocomplete="current-password"></label>
+      <label>Código do aplicativo <input name="codigo" required inputmode="numeric" maxlength="6"
+        autocomplete="one-time-code" placeholder="000000"></label>
       <button type="submit">Entrar</button>
-    </form>`;
-  const form = document.getElementById('form-token');
+    </form>
+    <button type="button" class="secundario" id="ir-cadastro">Primeiro acesso ou tenho um convite</button>`;
+
+  const form = document.getElementById('form-entrar');
   form.addEventListener('submit', e => {
     e.preventDefault();
     enviando(form.querySelector('button'), async () => {
       try {
-        await api('/analise/empregos', { token: form.token.value });
-        tokenEquipe = form.token.value;
+        const r = await api('/equipe/entrar', { method: 'POST', json: formDados(form) });
+        tokenEquipe = r.token;
         proximo();
+      } catch (err) {
+        mostrarErro(form, err.message);
+      }
+    });
+  });
+  document.getElementById('ir-cadastro').addEventListener('click', () => cadastroEquipe(proximo));
+
+  // Sem nenhuma conta ainda: vai direto para o primeiro acesso
+  api('/equipe/estado').then(r => { if (!r.tem_contas) cadastroEquipe(proximo); }).catch(() => {});
+}
+
+async function cadastroEquipe(proximo) {
+  let primeira = false;
+  try {
+    primeira = !(await api('/equipe/estado')).tem_contas;
+  } catch {
+    // segue como convite
+  }
+  tela.innerHTML = `
+    <h1>${primeira ? 'Primeiro acesso' : 'Criar minha conta'}</h1>
+    <p class="suave">${primeira
+      ? 'Use a <strong>chave de instalação</strong> (a variável ANALISTA_TOKEN configurada no servidor) para criar a primeira conta.'
+      : 'Use o <strong>convite</strong> que outra pessoa da equipe gerou para você no painel.'}</p>
+    <form id="form-cadastro">
+      <label>${primeira ? 'Chave de instalação' : 'Convite'}
+        <input name="convite" required autocomplete="off" ${primeira ? 'type="password"' : 'placeholder="CV-XXXX-XXXX-XXXX"'}></label>
+      <label>Seu nome <span class="suave">(como vai aparecer no registro)</span>
+        <input name="nome" required minlength="2" maxlength="40" autocomplete="username"></label>
+      <label>Senha <span class="suave">(pelo menos 10 caracteres)</span>
+        <input name="senha" type="password" required minlength="10" autocomplete="new-password"></label>
+      <label>Repita a senha <input name="senha2" type="password" required autocomplete="new-password"></label>
+      <button type="submit">Continuar</button>
+    </form>
+    <button type="button" class="secundario" id="voltar-login">Voltar para entrar</button>`;
+
+  document.getElementById('voltar-login').addEventListener('click', () => entrarEquipe(proximo));
+  const form = document.getElementById('form-cadastro');
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const dados = formDados(form);
+    if (dados.senha !== dados.senha2) return mostrarErro(form, 'As duas senhas não são iguais.');
+    enviando(form.querySelector('button'), async () => {
+      try {
+        const cad = await api('/equipe/cadastro', { method: 'POST', json: dados });
+        configurarCelular(cad, proximo);
+      } catch (err) {
+        mostrarErro(form, err.message);
+      }
+    });
+  });
+}
+
+function configurarCelular(cad, proximo) {
+  tela.innerHTML = `
+    <h1>Configure o código no celular</h1>
+    <ol class="passos">
+      <li><span>Instale um aplicativo autenticador: <strong>Google Authenticator</strong>,
+        <strong>Microsoft Authenticator</strong> ou <strong>Authy</strong>.</span></li>
+      <li><span>No aplicativo, toque em <strong>+</strong> e escaneie este QR code.</span></li>
+      <li><span>Digite abaixo o código de 6 dígitos que aparecer.</span></li>
+    </ol>
+    <img class="qr-pix" src="${esc(cad.qr_svg)}" alt="QR code para o aplicativo autenticador">
+    <p class="suave">Não dá para escanear? Digite esta chave no aplicativo:</p>
+    <div class="credenciais">${esc(cad.segredo.replace(/(.{4})/g, '$1 ').trim())}</div>
+    <form id="form-confirmar">
+      <label>Código do aplicativo <input name="codigo" required inputmode="numeric" maxlength="6"
+        autocomplete="one-time-code" placeholder="000000"></label>
+      <button type="submit">Confirmar e criar conta</button>
+    </form>`;
+
+  const form = document.getElementById('form-confirmar');
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    enviando(form.querySelector('button'), async () => {
+      try {
+        await api('/equipe/cadastro/confirmar', { method: 'POST', json: { cadastro_id: cad.cadastro_id, ...formDados(form) } });
+        entrarEquipe(proximo);
+        const aviso = document.createElement('p');
+        aviso.className = 'aviso sucesso';
+        aviso.textContent = 'Conta criada! Entre com seu nome, sua senha e um código novo do aplicativo.';
+        tela.querySelector('h1').after(aviso);
       } catch (err) {
         mostrarErro(form, err.message);
       }
@@ -788,7 +900,113 @@ function navEquipe(ativa) {
     <nav class="nav-equipe">
       <a href="#/equipe" class="${ativa === 'anuncios' ? 'ativa' : ''}">Anúncios</a>
       <a href="#/equipe/denuncias" class="${ativa === 'denuncias' ? 'ativa' : ''}">Denúncias</a>
+      <a href="#/equipe/contas" class="${ativa === 'contas' ? 'ativa' : ''}">Equipe</a>
     </nav>`;
+}
+
+const ACOES_REGISTRO = {
+  entrou: 'Entrou no painel',
+  saiu: 'Saiu do painel',
+  conta_criada: 'Conta criada',
+  convite_criado: 'Gerou um convite',
+  conta_desativada: 'Desativou a conta de',
+  lista_denuncias: 'Abriu a lista de denúncias',
+  denuncia_vista: 'Abriu',
+  foto_vista: 'Viu foto da',
+  denuncia_atualizada: 'Atualizou',
+  mensagem_enviada: 'Mandou mensagem na',
+  vaga_aprovada: 'Aprovou o',
+  vaga_rejeitada: 'Rejeitou o',
+  vaga_destaque: 'Destacou o',
+  vaga_removida: 'Removeu o',
+};
+
+function dataHoraBR(iso) {
+  return iso ? new Date(iso + 'Z').toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+}
+
+async function telaEquipeContas() {
+  if (!tokenEquipe) return entrarEquipe(telaEquipeContas);
+
+  tela.innerHTML = `
+    ${navEquipe('contas')}
+    <h1>Equipe</h1>
+    <div id="contas"><p class="suave">Carregando...</p></div>
+    <button type="button" id="gerar-convite">Convidar uma pessoa</button>
+    <div id="convite-gerado"></div>
+    <h2>Registro de acessos</h2>
+    <p class="suave">Tudo o que a equipe faz no painel fica anotado aqui: quem, o quê e quando.</p>
+    <div id="registro"><p class="suave">Carregando...</p></div>
+    <button type="button" class="secundario" id="sair-painel">Sair do painel</button>`;
+
+  async function carregar() {
+    try {
+      const [contas, registro] = await Promise.all([
+        api('/equipe/contas', { token: tokenEquipe }),
+        api('/equipe/registro', { token: tokenEquipe }),
+      ]);
+      document.getElementById('contas').innerHTML = contas.map(c => `
+        <div class="cartao">
+          <span class="etiqueta ${c.ativo ? '' : 'etiqueta-grave'}">${c.ativo ? 'Ativa' : 'Desativada'}</span>
+          ${c.sou_eu ? '<span class="etiqueta">Você</span>' : ''}
+          <h3>${esc(c.nome)}</h3>
+          <p class="suave">Último acesso: ${c.ultimo_acesso ? dataHoraBR(c.ultimo_acesso) : 'nunca'}</p>
+          ${c.ativo && !c.sou_eu ? `<button type="button" class="secundario" data-desativar="${c.id}" data-nome="${esc(c.nome)}">Desativar conta</button>` : ''}
+        </div>`).join('');
+      document.getElementById('registro').innerHTML = registro.length ? `<ul class="registro">${registro.map(r => `
+        <li><span class="suave">${dataHoraBR(r.quando)}</span>
+          <strong>${esc(r.analista || '—')}</strong> ${esc(ACOES_REGISTRO[r.acao] || r.acao)} ${esc(r.alvo || '')}</li>`).join('')}</ul>`
+        : '<p class="suave">Nada registrado ainda.</p>';
+    } catch (err) {
+      document.getElementById('contas').innerHTML = `<p class="erro">${esc(err.message)}</p>`;
+    }
+  }
+
+  document.getElementById('contas').addEventListener('click', async e => {
+    const botao = e.target.closest('[data-desativar]');
+    if (!botao) return;
+    if (botao.dataset.confirmar !== '1') {
+      botao.dataset.confirmar = '1';
+      botao.textContent = `Toque de novo para desativar ${botao.dataset.nome}`;
+      return;
+    }
+    await enviando(botao, async () => {
+      try {
+        await api(`/equipe/contas/${botao.dataset.desativar}/desativar`, { method: 'POST', token: tokenEquipe });
+        carregar();
+      } catch (err) {
+        botao.textContent = err.message;
+      }
+    });
+  });
+
+  document.getElementById('gerar-convite').addEventListener('click', e => {
+    enviando(e.target, async () => {
+      try {
+        const r = await api('/equipe/convites', { method: 'POST', token: tokenEquipe });
+        document.getElementById('convite-gerado').innerHTML = `
+          <div class="aviso" style="margin-top:12px">Passe este convite <strong>pessoalmente</strong> para a nova pessoa.
+            Ele vale por ${r.validade_horas} horas e só pode ser usado uma vez. Ela abre o painel, toca em
+            "Primeiro acesso ou tenho um convite" e cria a própria senha.</div>
+          <div class="credenciais" style="margin-top:12px">${esc(r.convite)}</div>`;
+        carregar();
+      } catch (err) {
+        document.getElementById('convite-gerado').innerHTML = `<p class="erro">${esc(err.message)}</p>`;
+      }
+    });
+  });
+
+  document.getElementById('sair-painel').addEventListener('click', async () => {
+    try {
+      await api('/equipe/sair', { method: 'POST', token: tokenEquipe });
+    } catch {
+      // a sessão já pode ter expirado
+    }
+    tokenEquipe = '';
+    ir('/');
+  });
+
+  carregar();
 }
 
 function telaEquipe() {
@@ -1092,6 +1310,7 @@ const ROTAS = {
   '/acompanhar': telaAcompanhar,
   '/equipe': telaEquipe,
   '/equipe/denuncias': telaEquipeDenuncias,
+  '/equipe/contas': telaEquipeContas,
 };
 const ROTAS_CANAL = ['/canal', '/denunciar', '/acompanhar'];
 

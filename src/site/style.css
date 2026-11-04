@@ -424,3 +424,10 @@ body.sem-barra .rodape { padding-bottom: 80px; }
 .etiqueta-grave { background: var(--alerta-claro); color: var(--alerta); }
 .texto-grave { color: var(--alerta); }
 .texto-livre { white-space: pre-wrap; }
+
+.cartao.encerrar { background: var(--primaria-clara); border-color: #a9dccd; }
+.cartao.encerrar button { margin-top: 8px; }
+
+.registro { list-style: none; padding: 0; margin: 0 0 12px; font-size: 14px; }
+.registro li { padding: 8px 0; border-bottom: 1px solid var(--borda); }
+.registro li .suave { display: block; font-size: 12px; }

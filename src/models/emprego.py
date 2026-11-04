@@ -62,6 +62,7 @@ class Vaga(db.Model):
     codigo_gestao_hash = db.Column(db.String(200), nullable=False)
 
     ativa = db.Column(db.Boolean, default=True)
+    encerrada_em = db.Column(db.DateTime)  # anunciante marcou "vaga preenchida" / "já consegui trabalho"
     criada_em = db.Column(db.DateTime, default=datetime.utcnow)
     expira_em = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(days=DIAS_VALIDADE))
 

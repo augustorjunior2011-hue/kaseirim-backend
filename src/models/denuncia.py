@@ -1,5 +1,6 @@
 from datetime import datetime
 from src.models.db import db
+from src.utils.cripto import TextoCifrado, NumeroCifrado
 
 # Crimes graves: prioridade na fila de análise
 CATEGORIAS = {
@@ -34,6 +35,7 @@ STATUS = (
 
 
 class Denuncia(db.Model):
+    """Os textos, o local e os dados do suspeito ficam criptografados no banco (TextoCifrado)."""
     __tablename__ = 'denuncias'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -41,23 +43,23 @@ class Denuncia(db.Model):
     chave_hash = db.Column(db.String(200), nullable=False)
 
     categoria = db.Column(db.String(40), nullable=False)
-    descricao = db.Column(db.Text, nullable=False)
-    data_ocorrencia = db.Column(db.String(40))  # texto livre: "ontem à noite", "toda sexta"...
+    descricao = db.Column(TextoCifrado, nullable=False)
+    data_ocorrencia = db.Column(TextoCifrado)  # texto livre: "ontem à noite", "toda sexta"...
 
-    latitude = db.Column(db.Float)
-    longitude = db.Column(db.Float)
-    referencia_local = db.Column(db.String(300))  # "perto da praça", "casa azul"...
-    cidade = db.Column(db.String(100))
-    uf = db.Column(db.String(2))
+    latitude = db.Column(NumeroCifrado)
+    longitude = db.Column(NumeroCifrado)
+    referencia_local = db.Column(TextoCifrado)  # "perto da praça", "casa azul"...
+    cidade = db.Column(TextoCifrado)
+    uf = db.Column(db.String(2))  # em claro: usado no filtro da equipe
 
-    suspeito_nome = db.Column(db.String(150))
-    suspeito_apelidos = db.Column(db.String(300))
-    suspeito_caracteristicas = db.Column(db.Text)
+    suspeito_nome = db.Column(TextoCifrado)
+    suspeito_apelidos = db.Column(TextoCifrado)
+    suspeito_caracteristicas = db.Column(TextoCifrado)
     faccionado = db.Column(db.String(10), default='nao_sei')
-    faccao = db.Column(db.String(100))
+    faccao = db.Column(TextoCifrado)
 
     status = db.Column(db.String(30), default='recebida', nullable=False)
-    parecer_analise = db.Column(db.Text)  # uso interno da equipe
+    parecer_analise = db.Column(TextoCifrado)  # uso interno da equipe
 
     # Sem horário exato para dificultar cruzamento com registros de operadora/rede
     criada_em = db.Column(db.Date, default=lambda: datetime.utcnow().date())
@@ -116,7 +118,7 @@ class FotoDenuncia(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     denuncia_id = db.Column(db.Integer, db.ForeignKey('denuncias.id'), nullable=False)
-    arquivo = db.Column(db.String(100), nullable=False)  # nome aleatório no disco
+    arquivo = db.Column(db.String(100), nullable=False)  # nome aleatório no disco (conteúdo criptografado)
 
 
 class MensagemDenuncia(db.Model):
@@ -126,7 +128,7 @@ class MensagemDenuncia(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     denuncia_id = db.Column(db.Integer, db.ForeignKey('denuncias.id'), nullable=False)
     autor = db.Column(db.String(12), nullable=False)  # 'cidadao' ou 'equipe'
-    texto = db.Column(db.Text, nullable=False)
+    texto = db.Column(TextoCifrado, nullable=False)
     criada_em = db.Column(db.Date, default=lambda: datetime.utcnow().date())
 
     def to_dict(self):
