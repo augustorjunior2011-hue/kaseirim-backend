@@ -20,11 +20,9 @@ CAMPOS_EDITAVEIS = ('titulo', 'descricao', 'empresa', 'cidade', 'uf', 'salario',
 MAX_ANUNCIOS_POR_TELEFONE = 3
 MOTIVOS_DENUNCIA = ('golpe', 'cobra_taxa', 'conteudo_ofensivo', 'vaga_inexistente', 'outro')
 
-# Planos de destaque (dias -> preço). Preços configuráveis por variável de ambiente.
-PLANOS_DESTAQUE = {
-    7: Decimal(os.environ.get('PRECO_DESTAQUE_7_DIAS', '9.90')),
-    30: Decimal(os.environ.get('PRECO_DESTAQUE_30_DIAS', '29.90')),
-}
+# Destaque cobrado por semana (preço configurável). Planos de 1, 2 e 4 semanas (dias -> preço).
+PRECO_DESTAQUE_SEMANA = Decimal(os.environ.get('PRECO_DESTAQUE_SEMANA', '10.00'))
+PLANOS_DESTAQUE = {semanas * 7: PRECO_DESTAQUE_SEMANA * semanas for semanas in (1, 2, 4)}
 MINUTOS_PARA_PAGAR = 30
 
 

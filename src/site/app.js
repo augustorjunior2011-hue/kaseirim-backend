@@ -18,6 +18,25 @@ const STATUS = {
   arquivada: 'Arquivada',
 };
 
+const ICONES = {
+  busca: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  local: '<path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/>',
+  dinheiro: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+  telefone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+  conversa: '<path d="M21 12a9 9 0 0 1-13.5 7.8L3 21l1.2-4.4A9 9 0 1 1 21 12z"/>',
+  estrela: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  escudo: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/>',
+  alerta: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="M12 8v5M12 16.5v.01"/>',
+  cadeado: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  foto: '<rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
+  olho: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  mais: '<path d="M12 5v14M5 12h14"/>',
+};
+
+function icone(nome) {
+  return `<svg class="icone" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome]}</svg>`;
+}
+
 const tela = document.getElementById('tela');
 const botaoSair = document.getElementById('sair-rapido');
 
@@ -117,28 +136,48 @@ const MOTIVOS_DENUNCIA_VAGA = {
 };
 
 const AVISO_GOLPE = `
-  <div class="aviso aviso-golpe"><strong>Cuidado com golpes:</strong> nenhuma empresa séria cobra
-    para contratar. Não pague taxa, curso, uniforme ou exame para conseguir uma vaga.</div>`;
+  <div class="aviso aviso-golpe">${icone('escudo')}<span><strong>Cuidado com golpes:</strong> nenhuma empresa séria
+    cobra para contratar. Não pague taxa, curso, uniforme ou exame para conseguir uma vaga.</span></div>`;
+
+function tempoAtras(iso) {
+  if (!iso) return '';
+  const minutos = Math.max(1, Math.round((Date.now() - new Date(iso + (iso.endsWith('Z') ? '' : 'Z'))) / 60000));
+  if (minutos < 60) return `há ${minutos} min`;
+  const horas = Math.round(minutos / 60);
+  if (horas < 24) return `há ${horas} h`;
+  const dias = Math.round(horas / 24);
+  return dias === 1 ? 'ontem' : `há ${dias} dias`;
+}
 
 function cartaoVaga(v) {
   const whats = `https://wa.me/55${v.telefone_contato}`;
+  const oferta = v.tipo === 'oferta';
   return `
-    <article class="cartao ${v.destaque ? 'destaque' : ''}" data-vaga="${v.id}">
-      <span class="etiqueta">${v.tipo === 'oferta' ? 'Vaga' : 'Procuro trabalho'}</span>
-      ${v.destaque ? '<span class="etiqueta">Destaque</span>' : ''}
+    <article class="vaga ${v.destaque ? 'destaque' : ''}" data-vaga="${v.id}">
+      ${v.destaque ? `<span class="selo-destaque">${icone('estrela')} Destaque</span>` : ''}
+      <div class="vaga-topo">
+        <span class="etiqueta ${oferta ? '' : 'procura'}">${oferta ? 'Vaga' : 'Procura trabalho'}</span>
+        <span class="vaga-data">${tempoAtras(v.criada_em)}</span>
+      </div>
       <h3>${esc(v.titulo)}</h3>
-      <p class="suave">${esc([v.empresa, `${v.cidade}/${v.uf}`, v.salario].filter(Boolean).join(' · '))}</p>
-      <p>${esc(v.descricao)}</p>
-      <p><a href="tel:${esc(v.telefone_contato)}">${esc(telefoneFormatado(v.telefone_contato))}</a>
-        · <a href="${esc(whats)}" target="_blank" rel="noopener noreferrer">WhatsApp</a></p>
-      <button type="button" class="link-denunciar">Denunciar anúncio</button>
+      ${v.empresa ? `<p class="vaga-empresa">${esc(v.empresa)}</p>` : ''}
+      <ul class="vaga-info">
+        <li>${icone('local')} ${esc(v.cidade)}/${esc(v.uf)}</li>
+        ${v.salario ? `<li class="salario">${icone('dinheiro')} ${esc(v.salario)}</li>` : ''}
+      </ul>
+      <p class="vaga-desc">${esc(v.descricao)}</p>
+      <div class="vaga-acoes">
+        <a class="botao-whats" href="${esc(whats)}" target="_blank" rel="noopener noreferrer">${icone('conversa')} WhatsApp</a>
+        <a class="botao-ligar" href="tel:${esc(v.telefone_contato)}">${icone('telefone')} Ligar</a>
+      </div>
+      <button type="button" class="link-denunciar">Reportar golpe ou problema</button>
     </article>`;
 }
 
 function formDenunciaVaga() {
   return `
     <form class="form-denuncia-vaga">
-      <label>O que há de errado?
+      <label>O que há de errado com este anúncio?
         <select name="motivo" required>
           <option value="">Selecione</option>
           ${Object.entries(MOTIVOS_DENUNCIA_VAGA).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
@@ -150,23 +189,31 @@ function formDenunciaVaga() {
 
 async function telaVagas() {
   tela.innerHTML = `
-    <h1>Vagas de emprego</h1>
-    <form id="filtros" class="filtros">
-      <input name="busca" placeholder="Buscar: cozinha, motorista...">
-      <select name="tipo">
-        <option value="">Tudo</option>
-        <option value="oferta">Vagas</option>
-        <option value="procura">Quem procura</option>
-      </select>
-      <select name="uf">${opcoesUF()}</select>
-      <select name="cidade"><option value="">Todas as cidades</option></select>
-    </form>
+    <section class="hero">
+      <p class="hero-kicker">Vagas perto de você</p>
+      <h1>Encontre trabalho ou quem contratar</h1>
+      <form id="filtros" role="search">
+        <div class="campo-busca">${icone('busca')}
+          <input name="busca" type="search" placeholder="Cargo, função ou palavra" aria-label="Buscar vagas"></div>
+        <div class="chips" role="radiogroup" aria-label="Tipo de anúncio">
+          <label><input type="radio" name="tipo" value="" checked> Todos</label>
+          <label><input type="radio" name="tipo" value="oferta"> Vagas</label>
+          <label><input type="radio" name="tipo" value="procura"> Quem procura trabalho</label>
+        </div>
+        <div class="linha-filtros">
+          <select name="uf" aria-label="Estado">${opcoesUF()}</select>
+          <select name="cidade" aria-label="Cidade"><option value="">Todas as cidades</option></select>
+        </div>
+      </form>
+    </section>
     ${AVISO_GOLPE}
-    <div id="lista"><p class="suave">Carregando...</p></div>
-    <a class="botao" href="#/publicar">Anunciar grátis</a>`;
+    <p class="contagem" id="contagem"></p>
+    <div id="lista"><div class="carregando"></div><div class="carregando"></div></div>
+    <a class="botao" href="#/publicar">${icone('mais')} Anunciar grátis</a>`;
 
   const filtros = document.getElementById('filtros');
   const lista = document.getElementById('lista');
+  const contagem = document.getElementById('contagem');
   const selectCidade = filtros.cidade;
 
   // Só aparecem cidades que têm anúncios no ar
@@ -194,23 +241,27 @@ async function telaVagas() {
     }
     const params = new URLSearchParams(Object.entries(dados).filter(([, v]) => v));
     try {
-      const { vagas } = await api('/empregos?' + params);
-      lista.innerHTML = vagas.length ? vagas.map(cartaoVaga).join('')
-        : '<p class="suave">Nenhum anúncio encontrado.</p>';
+      const { vagas, total } = await api('/empregos?' + params);
+      contagem.textContent = total === 1 ? '1 anúncio' : `${total} anúncios`;
+      lista.innerHTML = vagas.length ? vagas.map(cartaoVaga).join('') : `
+        <div class="vazio"><strong>Nenhum anúncio por aqui ainda</strong>
+          Tente outra cidade ou palavra, ou seja o primeiro a anunciar.</div>`;
     } catch (e) {
       lista.innerHTML = `<p class="erro">${esc(e.message)}</p>`;
     }
   }
 
   let espera;
-  filtros.addEventListener('input', e => {
+  const agendar = e => {
     if (e.target.name === 'uf') {
       selectCidade.value = '';
       carregarCidades();
     }
     clearTimeout(espera);
-    espera = setTimeout(carregar, 300);
-  });
+    espera = setTimeout(carregar, e.target.name === 'busca' ? 300 : 0);
+  };
+  filtros.addEventListener('input', agendar);
+  filtros.addEventListener('change', e => { if (e.target.type === 'radio') agendar(e); });
   filtros.addEventListener('submit', e => { e.preventDefault(); carregar(); });
 
   // Denunciar anúncio: abre um formulário dentro do próprio cartão
@@ -240,7 +291,8 @@ async function telaVagas() {
 
 function telaPublicar() {
   tela.innerHTML = `
-    <h1>Anunciar</h1>
+    <h1>Anunciar grátis</h1>
+    <p class="suave">Leva 1 minuto. Sem cadastro.</p>
     <form id="form-vaga">
       <div class="opcoes">
         <label><input type="radio" name="tipo" value="oferta" checked> Tenho uma vaga</label>
@@ -384,11 +436,12 @@ async function meuAnuncio(vaga, codigo) {
   area.innerHTML = `
     <div class="cartao">
       <h3>${vaga.destaque ? 'Aumentar o destaque' : 'Destacar anúncio'}</h3>
-      <p class="suave">Anúncios em destaque aparecem no topo da lista, em amarelo.</p>
+      <p class="suave">Anúncios em destaque aparecem no topo da lista, com selo amarelo.
+        ${reais(planos.planos[0].valor)} por semana.</p>
       <form id="form-destaque">
         <div class="opcoes">
           ${planos.planos.map((p, i) => `<label><input type="radio" name="dias" value="${p.dias}" ${i ? '' : 'checked'}>
-            ${p.dias} dias<br><strong>${reais(p.valor)}</strong></label>`).join('')}
+            ${p.dias / 7 === 1 ? '1 semana' : `${p.dias / 7} semanas`}<br><strong>${reais(p.valor)}</strong></label>`).join('')}
         </div>
         <button type="submit">Pagar com PIX</button>
       </form>
@@ -413,7 +466,7 @@ async function meuAnuncio(vaga, codigo) {
 function telaPix(pix, vaga, codigo) {
   tela.innerHTML = `
     <h1>Pague com PIX</h1>
-    <p>Destaque de <strong>${pix.dias} dias</strong> para o anúncio Nº ${vaga.id}: <strong>${reais(pix.valor)}</strong></p>
+    <p>Destaque de <strong>${pix.dias / 7 === 1 ? '1 semana' : `${pix.dias / 7} semanas`}</strong> para o anúncio Nº ${vaga.id}: <strong>${reais(pix.valor)}</strong></p>
     ${pix.qr_code_base64 ? `<img class="qr-pix" src="data:image/png;base64,${esc(pix.qr_code_base64)}" alt="QR code do PIX">` : ''}
     <label>PIX copia e cola <textarea id="pix-copia" readonly>${esc(pix.qr_code || '')}</textarea></label>
     <button type="button" id="copiar">Copiar código PIX</button>
@@ -460,21 +513,45 @@ function telaPix(pix, vaga, codigo) {
 // Canal seguro (denúncias)
 // ---------------------------------------------------------------------------
 
-function telaCanal() {
-  tela.innerHTML = `
-    <h1>Canal seguro</h1>
-    <p>Informe crimes de forma <strong>totalmente anônima</strong>. Não pedimos nome, CPF, telefone nem cadastro.</p>
-    <div class="aviso">
-      <strong>Para sua segurança:</strong>
-      <ul>
-        <li>Use a <strong>aba anônima</strong> do navegador.</li>
-        <li>Não conte a ninguém que você fez a denúncia.</li>
-        <li>Se alguém se aproximar, toque em <strong>Sair rápido</strong>, no canto da tela.</li>
-      </ul>
+function explicacaoDenuncia() {
+  return `
+    <div class="cabeca-denuncia">
+      <span class="bolha">${icone('alerta')}</span>
+      <div>
+        <h2 id="titulo-denuncia" tabindex="-1">Denúncia anônima</h2>
+        <p class="suave" style="margin:0">Sem nome, sem CPF, sem cadastro</p>
+      </div>
     </div>
-    <a class="botao" href="#/denunciar">Fazer uma denúncia</a>
-    <a class="botao secundario" href="#/acompanhar">Acompanhar denúncia</a>
-    <p class="suave" style="margin-top:16px">Denúncia falsa é crime (art. 339 do Código Penal).</p>`;
+    <p>Este é um canal para você informar <strong>crimes que acontecem no seu bairro</strong>, como tráfico de
+      drogas ou de armas, violência, abuso ou paradeiro de foragido, <strong>sem se identificar</strong>.</p>
+
+    <h3>Como funciona</h3>
+    <ol class="passos">
+      <li><span><strong>Conte o que aconteceu.</strong> Escolha o tipo de crime, marque o local no mapa e, se puder,
+        envie fotos e os apelidos de quem está envolvido.</span></li>
+      <li><span><strong>Anote o protocolo e a chave</strong> que aparecem no final. Eles são a única forma de
+        acompanhar a denúncia.</span></li>
+      <li><span><strong>Nossa equipe analisa</strong> se há indícios e encaminha as informações às autoridades,
+        sem nenhum dado seu.</span></li>
+      <li><span><strong>Acompanhe</strong> com o protocolo e a chave. A equipe pode te fazer perguntas por ali,
+        sempre no anonimato.</span></li>
+    </ol>
+
+    <h3>Seu anonimato</h3>
+    <ul class="garantias">
+      <li>${icone('cadeado')}<span>Não pedimos nome, CPF, telefone nem e-mail.</span></li>
+      <li>${icone('foto')}<span>As fotos perdem a localização e os dados do celular que ficam escondidos nelas.</span></li>
+      <li>${icone('olho')}<span>Use a <strong>aba anônima</strong> do navegador e, se alguém se aproximar, toque em
+        <strong>Sair rápido</strong>.</span></li>
+    </ul>
+
+    <a class="botao perigo" href="#/denunciar">${icone('alerta')} Fazer uma denúncia</a>
+    <a class="botao secundario" href="#/acompanhar">Acompanhar minha denúncia</a>
+    <p class="suave" style="margin-top:14px">Denúncia falsa é crime (art. 339 do Código Penal).</p>`;
+}
+
+function telaCanal() {
+  tela.innerHTML = `<div class="cartao">${explicacaoDenuncia()}</div>`;
 }
 
 async function telaDenunciar() {
@@ -1005,12 +1082,37 @@ const ROTAS = {
 };
 const ROTAS_CANAL = ['/canal', '/denunciar', '/acompanhar'];
 
+const barra = document.getElementById('barra');
+const dialogoDenuncia = document.getElementById('dialogo-denuncia');
+
 function renderizar() {
   const rota = location.hash.slice(1) || '/';
-  botaoSair.hidden = !ROTAS_CANAL.includes(rota);
+  const noCanal = ROTAS_CANAL.includes(rota);
+  botaoSair.hidden = !noCanal;
+  // No canal de denúncia a barra some e fica só o "Sair rápido"
+  barra.hidden = noCanal;
+  document.body.classList.toggle('sem-barra', noCanal);
+  barra.querySelectorAll('a[data-rota]').forEach(a => a.classList.toggle('ativa', a.dataset.rota === rota));
+  if (dialogoDenuncia.open) dialogoDenuncia.close();
   window.scrollTo(0, 0);
   (ROTAS[rota] || telaVagas)();
 }
+
+// Botão vermelho: primeiro explica o que é e como funciona a denúncia
+document.getElementById('botao-denuncia').addEventListener('click', () => {
+  dialogoDenuncia.innerHTML = explicacaoDenuncia() +
+    '<button type="button" class="fechar-folha" id="fechar-denuncia">Agora não</button>';
+  document.getElementById('fechar-denuncia').addEventListener('click', () => dialogoDenuncia.close());
+  dialogoDenuncia.showModal();
+  // abre no topo (o navegador rola até o primeiro botão ao abrir)
+  document.getElementById('titulo-denuncia').focus();
+  dialogoDenuncia.scrollTop = 0;
+});
+dialogoDenuncia.addEventListener('click', e => {
+  // toque no fundo escuro (fora da folha) fecha
+  const r = dialogoDenuncia.getBoundingClientRect();
+  if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) dialogoDenuncia.close();
+});
 
 // Links internos substituem a entrada do histórico em vez de criar uma nova
 document.addEventListener('click', e => {
