@@ -377,9 +377,12 @@ dialog.folha::backdrop { background: rgba(10, 25, 21, .55); }
   margin: 0 4px;
   background: var(--alerta);
   color: #fff;
+  line-height: 1.15;
+  text-align: center;
   animation: pulso 1.6s ease-in-out infinite;
 }
 .barra .botao-denuncia:hover { background: #b42318; }
+.barra .botao-denuncia svg.icone { width: 20px; height: 20px; }
 @keyframes pulso {
   0%   { background: var(--alerta); box-shadow: 0 0 0 0 rgba(240, 68, 56, .65); }
   50%  { background: var(--alerta-vivo); box-shadow: 0 0 0 10px rgba(240, 68, 56, 0); }
