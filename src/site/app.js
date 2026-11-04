@@ -246,12 +246,13 @@ function telaPublicar() {
         <label><input type="radio" name="tipo" value="oferta" checked> Tenho uma vaga</label>
         <label><input type="radio" name="tipo" value="procura"> Procuro trabalho</label>
       </div>
-      <p id="aviso-aprovacao" class="suave">Vagas de empresas são conferidas pela nossa equipe antes de ir para o ar.</p>
+      <p id="aviso-aprovacao" class="aviso" style="margin-top:12px">Vagas de empresas são conferidas pela nossa equipe antes de aparecer na lista.</p>
       <label>Título <input name="titulo" required maxlength="150" placeholder="Ex.: Auxiliar de cozinha"></label>
       <label>Descrição <textarea name="descricao" required maxlength="5000"
         placeholder="Horário, requisitos, benefícios ou sua experiência"></textarea></label>
       <label>Empresa <span class="suave">(opcional)</span> <input name="empresa" maxlength="150"></label>
-      <label>Salário <span class="suave">(opcional)</span> <input name="salario" maxlength="60" placeholder="Ex.: R$ 1.800"></label>
+      <label>Salário <span class="suave">(opcional)</span> <input name="salario" id="salario" maxlength="60" placeholder="Ex.: R$ 1.800"></label>
+      <label class="check"><input type="checkbox" id="salario-combinar"> A combinar</label>
       <label>Cidade <input name="cidade" required maxlength="100" list="cidades-conhecidas" autocomplete="off"></label>
       <datalist id="cidades-conhecidas"></datalist>
       <label>UF <select name="uf" required>${opcoesUF()}</select></label>
@@ -265,6 +266,13 @@ function telaPublicar() {
     document.getElementById('aviso-aprovacao').hidden = form.tipo.value !== 'oferta';
   }));
 
+  const campoSalario = document.getElementById('salario');
+  const aCombinar = document.getElementById('salario-combinar');
+  aCombinar.addEventListener('change', () => {
+    campoSalario.disabled = aCombinar.checked;
+    if (aCombinar.checked) campoSalario.value = '';
+  });
+
   // Sugere cidades já usadas, para todo mundo escrever o nome do mesmo jeito
   api('/empregos/cidades').then(cidades => {
     document.getElementById('cidades-conhecidas').innerHTML =
@@ -275,7 +283,9 @@ function telaPublicar() {
     e.preventDefault();
     enviando(form.querySelector('button'), async () => {
       try {
-        const r = await api('/empregos', { method: 'POST', json: formDados(form) });
+        const dados = formDados(form);
+        if (aCombinar.checked) dados.salario = 'A combinar';
+        const r = await api('/empregos', { method: 'POST', json: dados });
         const noAr = r.status === 'aprovada';
         tela.innerHTML = `
           <h1>${noAr ? 'Anúncio publicado' : 'Anúncio enviado para aprovação'}</h1>

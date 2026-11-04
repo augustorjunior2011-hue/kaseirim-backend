@@ -196,6 +196,16 @@ button.link-denunciar {
 }
 .nav-equipe a.ativa { background: var(--primaria); border-color: var(--primaria); color: #fff; }
 
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-weight: 500;
+}
+label.check input { width: auto; }
+input:disabled { background: var(--fundo); color: var(--suave); }
+
 .filtros label.check {
   grid-column: 1 / -1;
   display: flex;
