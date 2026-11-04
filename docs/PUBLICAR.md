@@ -93,7 +93,7 @@ Sem isso o site funciona normalmente, só não aparece a opção de destacar an�
    - `MERCADOPAGO_ACCESS_TOKEN` = o Access Token
    - `PIX_EMAIL_PAGADOR` = um e-mail qualquer que **não** seja o da sua conta Mercado Pago
    - `URL_PUBLICA` = endereço do site (o Mercado Pago avisa em `URL_PUBLICA/api/pagamentos/mercadopago`)
-   - `PRECO_DESTAQUE_7_DIAS` e `PRECO_DESTAQUE_30_DIAS` (padrão R$ 9,90 e R$ 29,90)
+   - `PRECO_DESTAQUE_SEMANA` (padrão R$ 10,00 por semana; o anunciante escolhe 1, 2 ou 4 semanas)
 5. A conta precisa ter uma **chave PIX cadastrada** no Mercado Pago.
 
 O site confere cada pagamento direto na API do Mercado Pago (valor, referência e status) antes

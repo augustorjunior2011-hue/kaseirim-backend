@@ -229,7 +229,8 @@ class DestaquePixTest(unittest.TestCase):
         self.assertEqual(r.status_code, 201)
         pix = r.get_json()
         self.assertEqual(pix['qr_code'], '000201PIX')
-        self.assertEqual(pix['valor'], 9.9)
+        self.assertEqual(pix['valor'], 10.0)
+        self.assertEqual([p['dias'] for p in planos['planos']], [7, 14, 28])
 
         status = self.client.post(f"/api/empregos/destaque/{pix['id']}/status", json={'codigo_gestao': codigo})
         self.assertEqual(status.get_json()['status'], 'pendente')
@@ -249,7 +250,7 @@ class DestaquePixTest(unittest.TestCase):
 
     def test_valor_ou_referencia_errados_nao_ativam(self):
         vid, codigo = self.anuncio_no_ar('21911110002')
-        pix = self.client.post(f'/api/empregos/{vid}/destaque', json={'codigo_gestao': codigo, 'dias': 30}).get_json()
+        pix = self.client.post(f'/api/empregos/{vid}/destaque', json={'codigo_gestao': codigo, 'dias': 28}).get_json()
         mp_id = next(iter(self.mp))
         self.mp[mp_id].update(status='approved', transaction_amount=0.01)
         status = self.client.post(f"/api/empregos/destaque/{pix['id']}/status", json={'codigo_gestao': codigo}).get_json()

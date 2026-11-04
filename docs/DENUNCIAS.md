@@ -109,8 +109,8 @@ Equipe de análise (header `Authorization: Bearer $ANALISTA_TOKEN`):
 - `DATABASE_URL` — banco (padrão SQLite em `src/database/app.db`).
 - `MAPA_USER_AGENT` / `MAPA_TILE_URL` — identificação e origem das imagens do mapa.
 - `CONFIAR_PROXY` — como ler o IP real do visitante para o limite de tentativas (`cloudflare` ou `1`).
-- `MERCADOPAGO_ACCESS_TOKEN`, `PIX_EMAIL_PAGADOR`, `URL_PUBLICA`, `PRECO_DESTAQUE_7_DIAS`,
-  `PRECO_DESTAQUE_30_DIAS` — destaque pago por PIX.
+- `MERCADOPAGO_ACCESS_TOKEN`, `PIX_EMAIL_PAGADOR`, `URL_PUBLICA`, `PRECO_DESTAQUE_SEMANA`
+  — destaque pago por PIX (R$ 10,00 por semana; planos de 1, 2 e 4 semanas).
 - `DESATIVAR_LIMITES=1` — desliga o limite de tentativas (só para testes).
 
 Lista completa com explicações em `.env.example`. Como publicar: `docs/PUBLICAR.md`.
